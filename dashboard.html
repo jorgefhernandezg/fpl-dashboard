@@ -241,9 +241,9 @@ function valorPlantilla(D, ids) {
 // ---------- vistas ----------
 function pintarTablero(D) {
   const m = D.meta, e = m.equipo;
-  document.getElementById("equipo").innerHTML = `${esc(e.nombre)} · ${esc(e.manager)} · ${Number(e.puntos || 0).toLocaleString("es")} pts`;
+  document.getElementById("equipo").innerHTML = `${esc(e.nombre)} · ${esc(e.manager)} · ${Number(e.puntos || 0).toLocaleString("es-PE")} pts`;
   const dl = new Date(m.deadline);
-  const fmt = new Intl.DateTimeFormat("es", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const fmt = new Intl.DateTimeFormat("es-PE", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   const gen = new Date(m.generado);
   document.getElementById("actualizado").textContent = "Datos del " + fmt.format(gen);
   const faltan = dl - Date.now();
@@ -255,7 +255,7 @@ function pintarTablero(D) {
     ["Deadline", fmt.format(dl), cuenta],
     ["Transferencias libres", e.ft, e.ft_configuradas ? "configuradas" : "estimadas" + (pend ? ` · ${pend} ya hecha${pend > 1 ? "s" : ""}` : "")],
     ["En el banco", "£" + f1(e.banco), ""],
-    ["Rank global", e.rank ? Number(e.rank).toLocaleString("es") : "–", ""],
+    ["Rank global", e.rank ? Number(e.rank).toLocaleString("es-PE") : "–", ""],
   ].map(([k, v, s]) => `<div class="stat"><span class="k">${k}</span><span class="v">${esc(v)}${s ? ` <small>${esc(s)}</small>` : ""}</span></div>`).join("");
 }
 
@@ -518,11 +518,11 @@ function render() {
   if (S.vista === "fichajes") planificador(D);
   if (S.vista === "temporada") {
     const h = D.meta.historial || [];
-    grafico("g-rank", h.map(r => ({ x: r.gw, y: r.rank })), { titulo: "Rank global por jornada", invertir: true, fmt: v => Math.round(v).toLocaleString("es") });
+    grafico("g-rank", h.map(r => ({ x: r.gw, y: r.rank })), { titulo: "Rank global por jornada", invertir: true, fmt: v => Math.round(v).toLocaleString("es-PE") });
     grafico("g-dif", h.map(r => ({ x: r.gw, y: r.puntos - r.promedio })), { titulo: "Puntos sobre el promedio", barras: true, cero: true, alto: 150, fmt: v => (v > 0 ? "+" : "") + Math.round(v) });
   }
   const m = D.meta;
-  document.getElementById("pie").innerHTML = `<div>Proyección generada ${new Date(m.generado).toLocaleString("es")} con la API oficial de FPL. Se actualiza sola cada día.</div>
+  document.getElementById("pie").innerHTML = `<div>Proyección generada ${new Date(m.generado).toLocaleString("es-PE")} con la API oficial de FPL. Se actualiza sola cada día.</div>
     <div>Modelo: forma con vida media de ${m.modelo.vida_media} jornadas, ancla de ${m.modelo.k_ataque} minutos hacia el promedio de la posición, ventaja de local ×${f2(m.modelo.ventaja_local)}. Parámetros editables en <code>config.toml</code> del repositorio.</div>`;
 }
 
