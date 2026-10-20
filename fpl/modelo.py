@@ -116,6 +116,14 @@ def disponibilidad(j, eventos, gws):
 
 def tasas(t, cfg):
     g = t["jug_gw"].copy()
+    # Un partido extraordinario (dos penales, un 4-0) no debe definir la tasa de todo el horizonte:
+    # se recorta lo que un solo partido puede aportar de xG y de xA.
+    tg, ta = cfg["forma"].get("tope_xg_partido"), cfg["forma"].get("tope_xa_partido")
+    n = g["n_part"].clip(lower=1)
+    if tg:
+        g["xg"] = g["xg"].clip(upper=tg * n)
+    if ta:
+        g["xa"] = g["xa"].clip(upper=ta * n)
     gw_ref = g["gw"].max()
     g["w"] = pesos(g["gw"], gw_ref, cfg["forma"]["vida_media_jugador"])
     f = cfg["forma"]

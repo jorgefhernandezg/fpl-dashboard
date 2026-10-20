@@ -16,6 +16,8 @@ k_ataque = 180          # minutos de "ancla" hacia el promedio de la posición (
 k_bonus = 270
 k_atajadas = 270
 ventana_forma = 4       # jornadas usadas para detectar jugadores en forma
+tope_xg_partido = 1.0   # lo máximo que un solo partido aporta de xG a la tasa (evita que un partido defina al jugador)
+tope_xa_partido = 0.6   # igual, para xA
 
 [decision]
 permitir_golpes = false            # false = solo transferencias libres (nunca -4)
