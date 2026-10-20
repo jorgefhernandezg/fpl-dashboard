@@ -1,0 +1,32 @@
+# Configuración del modelo FPL. Edita y haz commit: la siguiente corrida usa los valores nuevos.
+
+[equipo]
+team_id = 2436428
+# 0 = estimar desde tu historial. Pon un número si la estimación no coincide con la web de FPL.
+transferencias_libres = 0
+
+[horizonte]
+jornadas = 5            # cuántas jornadas futuras se proyectan
+descuento = 0.88        # peso de cada jornada siguiente (0.88 = la 2ª vale 88% de la 1ª)
+
+[forma]
+vida_media_jugador = 6  # jornadas: un partido de hace 6 GW pesa la mitad que el último
+vida_media_equipo = 10  # igual, para la fuerza de ataque/defensa de los equipos
+k_ataque = 180          # minutos de "ancla" hacia el promedio de la posición (xG, xA)
+k_bonus = 270
+k_atajadas = 270
+ventana_forma = 4       # jornadas usadas para detectar jugadores en forma
+
+[decision]
+umbral_transferencia_libre = 1.5   # ganancia mínima para gastar una transferencia libre
+margen_golpe = 1.5                 # además de los 4 puntos del golpe
+candidatos_por_posicion = 15       # para evaluar dobles transferencias
+
+[puntuacion]
+# Reglas de FPL. Ajusta si cambian.
+gol = { GKP = 10, DEF = 6, MID = 5, FWD = 4 }
+porteria_cero = { GKP = 4, DEF = 4, MID = 1, FWD = 0 }
+asistencia = 3
+contribucion_defensiva = 2
+atajadas_por_punto = 3
+goles_en_contra_por_punto = 2
