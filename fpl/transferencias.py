@@ -100,112 +100,182 @@ def mejor_xi(xp, pos):
     return elegidos, cap, float(xp[elegidos].sum() + xp[cap])
 
 
-def valor(ids, X, pos_de, pesos_gw):
-    """Valor descontado de una plantilla: suma de (mejor XI + capitán) por jornada.
-
-    X puede ser un DataFrame (índice = id) o una tupla (array, {id: fila}) para ir más rápido."""
-    if isinstance(X, tuple):
-        arr, fila = X
-        M = arr[[fila[i] for i in ids]]
-    else:
-        M = X.loc[ids].values
-    pos = [pos_de[i] for i in ids]
-    tot = np.zeros(M.shape[1])
-    for k in range(M.shape[1]):
-        tot[k] = mejor_xi(M[:, k], pos)[2]
-    return tot * pesos_gw
+# Varianza de los puntos de una jornada ≈ razón × puntos esperados (medido en 2025-26 con titulares)
+RAZON_VARIANZA = {"GKP": 2.2, "DEF": 2.8, "MID": 2.4, "FWD": 3.1}
 
 
-# ---------------------------------------------------------------- búsqueda
+class Evaluador:
+    """Valor esperado y riesgo frente al campo de una plantilla, desde la columna `desde` del horizonte.
 
-def buscar(estado, matriz, jugadores, cfg, horizontes=(1, 3)):
-    j = jugadores.set_index("id")
-    H = matriz.shape[1]
-    pesos_gw = np.power(cfg["horizonte"]["descuento"], np.arange(H))
-    pos_de = j["pos"].to_dict()
-    club = j["team"].to_dict()
-    precio = j["now_cost"].to_dict()
-    plantilla = list(estado["plantilla"])
-    rapido = (matriz.values, {e: k for k, e in enumerate(matriz.index)})
-    base = valor(plantilla, rapido, pos_de, pesos_gw)
-    banco = estado["banco"]
+    Riesgo: desviación típica de (tus puntos − puntos del campo). Cada jugador aporta
+    (multiplicador_tuyo − propiedad_efectiva)² × varianza. No tener a alguien muy poseído suma riesgo;
+    tenerlo lo neutraliza."""
 
-    disponibles = j[(j["status"] != "u")].index.difference(plantilla)
-    total_h = (matriz.loc[disponibles] * pesos_gw).sum(axis=1)
+    def __init__(self, matriz, jugadores, cfg, eo, desde=0):
+        j = jugadores.set_index("id")
+        H = matriz.shape[1]
+        self.pesos = np.power(cfg["horizonte"]["descuento"], np.arange(H))[desde:]
+        self.arr = matriz.values[:, desde:]
+        self.fila = {e: k for k, e in enumerate(matriz.index)}
+        self.pos_de = j["pos"].to_dict()
+        self.club = j["team"].to_dict()
+        self.precio = j["now_cost"].to_dict()
+        self.status = j["status"].to_dict()
+        self.eo = eo.reindex(matriz.index).fillna(0).values
+        razon = np.array([RAZON_VARIANZA.get(self.pos_de.get(e), 2.5) for e in matriz.index])
+        self.var = self.arr.clip(min=0) * razon[:, None]
+        self.C = (self.eo[:, None] ** 2 * self.var).sum(axis=0)
+        self.lam = cfg["decision"].get("aversion_riesgo", 0.0)
+        self.index = matriz.index
+
+    def evaluar(self, ids):
+        filas = [self.fila[i] for i in ids]
+        M = self.arr[filas]
+        pos = [self.pos_de[i] for i in ids]
+        eo = self.eo[filas]
+        val = np.zeros(M.shape[1])
+        rie = np.zeros(M.shape[1])
+        for k in range(M.shape[1]):
+            xi, cap, v = mejor_xi(M[:, k], pos)
+            val[k] = v
+            m = np.zeros(len(ids))
+            m[xi] = 1
+            m[cap] = 2
+            r2 = self.C[k] + (((m - eo) ** 2 - eo ** 2) * self.var[filas, k]).sum()
+            rie[k] = np.sqrt(max(r2, 0))
+        return val * self.pesos, rie * self.pesos
+
+
+def buscar(ev, plantilla, banco, venta, cfg, n_cand=None, dobles=True):
+    """Todas las transferencias simples y las dobles entre los mejores candidatos por posición."""
+    H = len(ev.pesos)
+    base_v, base_r = ev.evaluar(plantilla)
+    disponibles = [e for e in ev.index if ev.status.get(e) != "u" and e not in set(plantilla)]
+    tot = {e: float((ev.arr[ev.fila[e]] * ev.pesos).sum()) for e in disponibles}
 
     def clubes(ids):
         c = {}
         for i in ids:
-            c[club[i]] = c.get(club[i], 0) + 1
+            c[ev.club[i]] = c.get(ev.club[i], 0) + 1
         return c
 
-    def ganancia(nueva):
-        v = valor(nueva, rapido, pos_de, pesos_gw) - base
-        out = {"h%d" % h: float(v[:h].sum()) for h in horizontes if h < H}
-        out["h%d" % H] = float(v.sum())
+    def registro(nueva, sale, entra, bf):
+        v, r = ev.evaluar(nueva)
+        dv, dr = v - base_v, r - base_r
+        out = {"sale": sale, "entra": entra, "banco_final": int(bf),
+               "h1": float(dv[:1].sum()), "h3": float(dv[:3].sum()), "hT": float(dv.sum()),
+               "riesgo": float(dr.sum()), "riesgo1": float(dr[:1].sum())}
+        out["puntaje"] = out["hT"] - ev.lam * out["riesgo"]
         return out
 
-    # --- simples ---
     simples = []
     for sale in plantilla:
-        p = pos_de[sale]
-        presupuesto = banco + estado["venta"][sale]
-        cand = [e for e in disponibles if pos_de[e] == p and precio[e] <= presupuesto]
+        p = ev.pos_de[sale]
+        presupuesto = banco + venta[sale]
         resto = [x for x in plantilla if x != sale]
         cr = clubes(resto)
-        for entra in cand:
-            if cr.get(club[entra], 0) >= 3:
+        for entra in disponibles:
+            if ev.pos_de[entra] != p or ev.precio[entra] > presupuesto or cr.get(ev.club[entra], 0) >= 3:
                 continue
-            nueva = resto + [entra]
-            g = ganancia(nueva)
-            simples.append({"sale": sale, "entra": entra, "banco_final": presupuesto - precio[entra], **g})
-    simples = sorted(simples, key=lambda d: -d["h%d" % H])
+            simples.append(registro(resto + [entra], sale, entra, presupuesto - ev.precio[entra]))
+    simples.sort(key=lambda d: -d["puntaje"])
 
-    # --- dobles (sobre los mejores candidatos de cada posición) ---
-    n_cand = cfg["decision"]["candidatos_por_posicion"]
-    top = {p: list(total_h[[pos_de[e] == p for e in total_h.index]].sort_values(ascending=False)
-                   .head(n_cand).index) for p in CUPO}
-    dobles = []
-    for s1, s2 in itertools.combinations(plantilla, 2):
-        presupuesto = banco + estado["venta"][s1] + estado["venta"][s2]
-        resto = [x for x in plantilla if x not in (s1, s2)]
-        cr = clubes(resto)
-        for e1 in top[pos_de[s1]]:
-            for e2 in top[pos_de[s2]]:
-                if e1 == e2 or precio[e1] + precio[e2] > presupuesto:
-                    continue
-                if pos_de[s1] == pos_de[s2] and e1 > e2:
-                    continue
-                c = dict(cr)
-                ok = True
-                for e in (e1, e2):
-                    c[club[e]] = c.get(club[e], 0) + 1
-                    if c[club[e]] > 3:
-                        ok = False
-                if not ok:
-                    continue
-                g = ganancia(resto + [e1, e2])
-                dobles.append({"sale": [s1, s2], "entra": [e1, e2],
-                               "banco_final": presupuesto - precio[e1] - precio[e2], **g})
-    dobles = sorted(dobles, key=lambda d: -d["h%d" % H])
-
-    return {"simples": simples, "dobles": dobles, "valor_base": base.tolist(), "pesos": pesos_gw.tolist()}
+    lista_d = []
+    if dobles:
+        n_cand = n_cand or cfg["decision"]["candidatos_por_posicion"]
+        top = {}
+        for p in CUPO:
+            cand = sorted([e for e in disponibles if ev.pos_de[e] == p], key=lambda e: -tot[e])
+            top[p] = cand[:n_cand]
+        for s1, s2 in itertools.combinations(plantilla, 2):
+            presupuesto = banco + venta[s1] + venta[s2]
+            resto = [x for x in plantilla if x not in (s1, s2)]
+            cr = clubes(resto)
+            for e1 in top[ev.pos_de[s1]]:
+                for e2 in top[ev.pos_de[s2]]:
+                    if e1 == e2 or ev.precio[e1] + ev.precio[e2] > presupuesto:
+                        continue
+                    if ev.pos_de[s1] == ev.pos_de[s2] and e1 > e2:
+                        continue
+                    c = dict(cr)
+                    ok = True
+                    for e in (e1, e2):
+                        c[ev.club[e]] = c.get(ev.club[e], 0) + 1
+                        ok = ok and c[ev.club[e]] <= 3
+                    if ok:
+                        lista_d.append(registro(resto + [e1, e2], [s1, s2], [e1, e2],
+                                                presupuesto - ev.precio[e1] - ev.precio[e2]))
+        lista_d.sort(key=lambda d: -d["puntaje"])
+    return {"simples": simples, "dobles": lista_d, "base": base_v.tolist(), "riesgo_base": base_r.tolist()}
 
 
-def decidir(busq, ft, cfg, H):
+def aplicar(plantilla, banco, venta, mov, ev):
+    sale =mov["sale"] if isinstance(mov["sale"], list) else [mov["sale"]]
+    entra = mov["entra"] if isinstance(mov["entra"], list) else [mov["entra"]]
+    nueva = list(plantilla)
+    v = dict(venta)
+    for s, e in zip(sale, entra):
+        nueva[nueva.index(s)] = e
+        banco += venta[s] - ev.precio[e]
+        v[e] = ev.precio[e]
+    return nueva, banco, v
+
+
+def planificar(matriz, jugadores, cfg, eo, estado, ft, busq_ahora):
+    """Compara planes de 2 semanas usando solo transferencias libres (o con golpes, si se permiten).
+
+    Valor de un plan = ganancia esta semana + ganancia la próxima (sobre la plantilla resultante)
+    + valor de las transferencias libres que quedan guardadas al final."""
     d = cfg["decision"]
-    clave = "h%d" % H
-    umbral_ft = d["umbral_transferencia_libre"] if ft < 5 else 0.0
-    opciones = [{"tipo": "guardar", "neto": 0.0, "ganancia": 0.0, "coste": 0}]
-    for n, lista in ((1, busq["simples"]), (2, busq["dobles"])):
-        if not lista:
-            continue
-        mejor = lista[0]
-        golpes = max(0, n - ft)
-        libres = n - golpes
-        coste = 4 * golpes
-        neto = mejor[clave] - coste - libres * umbral_ft - golpes * d["margen_golpe"]
-        opciones.append({"tipo": "simple" if n == 1 else "doble", "neto": float(neto),
-                         "ganancia": float(mejor[clave]), "coste": coste, "mov": mejor})
-    elegida = max(opciones, key=lambda o: o["neto"])
-    return {"elegida": elegida, "opciones": opciones}
+    golpes_ok = d.get("permitir_golpes", False)
+    v_ft = d["umbral_transferencia_libre"]
+    ev2 = Evaluador(matriz, jugadores, cfg, eo, desde=1)
+    ev1 = Evaluador(matriz, jugadores, cfg, eo, desde=0)
+    plantilla, banco, venta = list(estado["plantilla"]), estado["banco"], dict(estado["venta"])
+
+    def coste(n, libres):
+        golpes = max(0, n - libres)
+        return 4 * golpes + golpes * d["margen_golpe"], golpes
+
+    def max_mov(libres):
+        return 2 if golpes_ok else min(2, libres)
+
+    primeras = [(0, None)]
+    if max_mov(ft) >= 1:
+        primeras += [(1, m) for m in busq_ahora["simples"][:6]]
+    if max_mov(ft) >= 2:
+        primeras += [(2, m) for m in busq_ahora["dobles"][:4]]
+
+    planes = []
+    for n1, m1 in primeras:
+        c1, g1 = coste(n1, ft)
+        if m1 is None:
+            p1, b1, v1, val1 = plantilla, banco, venta, 0.0
+        else:
+            p1, b1, v1 = aplicar(plantilla, banco, venta, m1, ev1)
+            val1 = m1["puntaje"]
+        ft2 = min(5, max(ft - n1, 0) + 1)
+        b2 = buscar(ev2, p1, b1, v1, cfg, n_cand=10, dobles=max_mov(ft2) >= 2)
+        segundas = [(0, None)]
+        if max_mov(ft2) >= 1 and b2["simples"]:
+            segundas.append((1, b2["simples"][0]))
+        if max_mov(ft2) >= 2 and b2["dobles"]:
+            segundas.append((2, b2["dobles"][0]))
+        for n2, m2 in segundas:
+            c2, g2 = coste(n2, ft2)
+            ft3 = min(5, max(ft2 - n2, 0) + 1)
+            val2 = m2["puntaje"] if m2 else 0.0
+            total = val1 - c1 + val2 - c2 + v_ft * (ft3 - 1)
+            planes.append({"total": float(total), "ft_final": ft3, "golpes": g1 + g2,
+                           "pasos": [{"n": n1, "mov": m1, "valor": float(val1 - c1)},
+                                     {"n": n2, "mov": m2, "valor": float(val2 - c2), "ft": ft2}]})
+    planes.sort(key=lambda p: -p["total"])
+    # quitar planes repetidos en su primer paso para mostrar alternativas distintas
+    vistos, unicos = set(), []
+    for p in planes:
+        clave = (p["pasos"][0]["n"], str(p["pasos"][0]["mov"] and p["pasos"][0]["mov"]["entra"]),
+                 p["pasos"][1]["n"], str(p["pasos"][1]["mov"] and p["pasos"][1]["mov"]["entra"]))
+        if clave not in vistos:
+            vistos.add(clave)
+            unicos.append(p)
+    return unicos

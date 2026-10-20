@@ -13,7 +13,7 @@ import tomllib
 import numpy as np
 import pandas as pd
 
-from . import datos, diagnosticos, modelo, predicciones, transferencias
+from . import chips, datos, diagnosticos, modelo, predicciones, transferencias
 from .api import Fuente
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -59,8 +59,11 @@ def ejecutar(local=None, salida=None, ahora=None):
     est = transferencias.estado_equipo(fuente, team_id, t, gw_actual, gw_sig)
     ft_cfg = cfg["equipo"]["transferencias_libres"]
     ft = int(ft_cfg) if ft_cfg else est["ft_estimadas"]
-    busq = transferencias.buscar(est, X, t["jugadores"], cfg)
-    dec = transferencias.decidir(busq, ft, cfg, H)
+    eo = propiedad_efectiva(t, gw_actual, cfg)
+    evalu = transferencias.Evaluador(X, t["jugadores"], cfg, eo)
+    busq = transferencias.buscar(evalu, est["plantilla"], est["banco"], est["venta"], cfg)
+    planes = transferencias.planificar(X, t["jugadores"], cfg, eo, est, ft, busq)
+    rchips = chips.evaluar(X, t["jugadores"], est, gws, gw_sig, raw["boot"], cfg)
 
     # --- registro de predicciones y validación ---
     ruta_reg = os.path.join(salida, "predicciones.csv")
@@ -70,12 +73,24 @@ def ejecutar(local=None, salida=None, ahora=None):
     auditoria = auditar_capitania(fuente, team_id, reg, t)
 
     # --- salida ---
-    res = armar_salida(t, cfg, proy, diag, est, busq, dec, ft, gws, gw_actual, gw_sig, deadline,
-                       ahora, valid, auditoria, pesos_gw)
+    res = armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_sig, deadline,
+                       ahora, valid, auditoria, pesos_gw, eo, rchips, raw["boot"])
     res["meta"]["segundos"] = round(time.time() - t0, 1)
     res["meta"]["llamadas_api"] = fuente.llamadas
     escribir(res, salida)
     return res
+
+
+def propiedad_efectiva(t, gw_actual, cfg):
+    """Propiedad efectiva aproximada (0-1+): propiedad, y para el capitán más elegido del campo se suma
+    la parte de sus dueños que lo capitanea. La API pública no da la capitanía del resto."""
+    j = t["jugadores"].set_index("id")
+    eo = (j["propiedad"].fillna(0) / 100.0).copy()
+    ev = t["eventos"].set_index("id")
+    cap = ev["most_captained"].get(gw_actual) if "most_captained" in ev.columns else None
+    if cap is not None and not pd.isna(cap) and int(cap) in eo.index:
+        eo[int(cap)] *= 1 + cfg["decision"].get("capitania_campo", 0.6)
+    return eo
 
 
 def auditar_capitania(fuente, team_id, reg, t):
@@ -103,8 +118,8 @@ def auditar_capitania(fuente, team_id, reg, t):
     return filas
 
 
-def armar_salida(t, cfg, proy, diag, est, busq, dec, ft, gws, gw_actual, gw_sig, deadline, ahora,
-                 valid, auditoria, pesos_gw):
+def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_sig, deadline, ahora,
+                 valid, auditoria, pesos_gw, eo, rchips, boot):
     j = t["jugadores"].set_index("id")
     X = proy["matriz"]
     b = proy["base"]
@@ -114,7 +129,16 @@ def armar_salida(t, cfg, proy, diag, est, busq, dec, ft, gws, gw_actual, gw_sig,
     sig = det[det["gw"] == gw_sig].groupby("id").agg(xmin=("xmin", "sum"), p60=("p60", "max"),
                                                      p_cs=("p_cs", "mean"))
     plantilla = est["plantilla"]
+    gws_pas, u_pts, u_min, u_tot = diagnosticos.ultimas(t, 5)
     involucrados = set(plantilla)
+    for pl in planes[:6]:
+        for paso in pl["pasos"]:
+            if paso["mov"]:
+                involucrados |= set(np.atleast_1d(paso["mov"]["entra"])) | set(np.atleast_1d(paso["mov"]["sale"]))
+    if rchips.get("detalle"):
+        for dch in rchips["detalle"]:
+            if dch.get("wildcard"):
+                involucrados |= set(dch["wildcard"]["entran"])
     for m in busq["simples"][:40]:
         involucrados |= {m["entra"], m["sale"]}
     for m in busq["dobles"][:20]:
@@ -137,7 +161,17 @@ def armar_salida(t, cfg, proy, diag, est, busq, dec, ft, gws, gw_actual, gw_sig,
             "xmin": r2(sig["xmin"].get(pid, 0), 0), "p60": r2(sig["p60"].get(pid, 0)),
             "ptit": r2(b.at[pid, "p_tit"]), "xg90": r2(b.at[pid, "xg90"]), "xa90": r2(b.at[pid, "xa90"]),
             "pdc": r2(b.at[pid, "p_dc"]) if r["pos"] != "GKP" else None,
+            "eo": r2(eo.get(pid, 0), 3),
         }
+        if pid in u_tot.index:
+            ut = u_tot.loc[pid]
+            rec.update({
+                "ult": [None if pd.isna(v) else int(v) for v in u_pts.loc[pid].values],
+                "ultmin": [None if pd.isna(v) else int(v) for v in u_min.loc[pid].values],
+                "ult_tit": ni(ut["tit"]), "ult_part": ni(ut["partidos"]), "ult_min": ni(ut["min"]),
+                "ult_ga": ni(ut["goles"]) + ni(ut["asist"]), "ult_dc": ni(ut["dc"]),
+                "ult_xgi90": r2(ut["xgi"] * 90 / ut["min"]) if ut["min"] > 0 else None,
+            })
         if d is not None:
             rec.update({
                 "pj": ni(d["pj"]), "min": ni(d["minutos"]),
@@ -146,6 +180,9 @@ def armar_salida(t, cfg, proy, diag, est, busq, dec, ft, gws, gw_actual, gw_sig,
                 "g": ni(d["goles"]), "xg": r2(d["xg"]), "bz": r2(d["brecha_z"]),
                 "reg": r2(d["regularidad"]), "xgi_rec": r2(d["xgi90_rec"]), "xgi_temp": r2(d["xgi90_temp"]),
                 "tend": r2(d["tendencia"]),
+                "gwm": ni(d["gw_mejor"]) if not pd.isna(d["gw_mejor"]) else None,
+                "hace": ni(d["hace"]) if not pd.isna(d["hace"]) else None,
+                "cxgi": r2(d["conc_xgi"]), "cpct": r2(d["conc_pct"]),
                 "f": [k for k, c in (("haul", "alerta_haul"), ("suerte", "alerta_suerte"),
                                      ("forma", "en_forma")) if bool(d[c])],
             })
@@ -167,7 +204,6 @@ def armar_salida(t, cfg, proy, diag, est, busq, dec, ft, gws, gw_actual, gw_sig,
         if len(lst) < 3:
             lst.append(mov(m))
 
-    elegida = dec["elegida"]
     entrada = est["entrada"]
     eqs = t["equipos"].set_index("team")
     fz = proy["fuerza"]
@@ -202,16 +238,38 @@ def armar_salida(t, cfg, proy, diag, est, busq, dec, ft, gws, gw_actual, gw_sig,
         "modelo": {"mu": r2(proy["mu"], 3), "ventaja_local": r2(proy["ventaja_local"], 3),
                    "vida_media": cfg["forma"]["vida_media_jugador"], "k_ataque": cfg["forma"]["k_ataque"],
                    "umbral_ft": cfg["decision"]["umbral_transferencia_libre"],
-                   "margen_golpe": cfg["decision"]["margen_golpe"]},
+                   "margen_golpe": cfg["decision"]["margen_golpe"],
+                   "aversion_riesgo": cfg["decision"].get("aversion_riesgo", 0.0),
+                   "permitir_golpes": bool(cfg["decision"].get("permitir_golpes", False))},
+        "gws_pasados": gws_pas,
         "chips": [{"gw": int(c["event"]), "chip": c["name"]} for c in est["chips"]],
         "historial": hist,
     }
+    def paso_json(p):
+        return {"n": p["n"], "valor": r2(p["valor"]), "ft": p.get("ft"), "mov": mov(p["mov"]) if p["mov"] else None}
+
+    def plan_json(pl):
+        return {"total": r2(pl["total"]), "ft_final": pl["ft_final"], "golpes": pl["golpes"],
+                "pasos": [paso_json(p) for p in pl["pasos"]]}
+
+    mejor = planes[0]
+    primero = mejor["pasos"][0]
     decision = {
-        "tipo": elegida["tipo"], "neto": r2(elegida["neto"]), "ganancia": r2(elegida["ganancia"]),
-        "coste": elegida["coste"], "mov": mov(elegida["mov"]) if "mov" in elegida else None,
-        "opciones": [{k: (r2(v) if isinstance(v, float) else v) for k, v in o.items() if k != "mov"}
-                     for o in dec["opciones"]],
+        "tipo": {0: "guardar", 1: "simple", 2: "doble"}[primero["n"]],
+        "mov": mov(primero["mov"]) if primero["mov"] else None,
+        "plan": plan_json(mejor), "planes": [plan_json(p) for p in planes[:6]],
     }
+    # Riesgo frente al campo: jugadores muy poseídos que no tienes, ordenados por lo que el campo gana con ellos
+    mios = set(plantilla)
+    amen = []
+    for pid in X.index:
+        if pid in mios or eo.get(pid, 0) < 0.10:
+            continue
+        amen.append((float(eo[pid] * X.at[pid, gw_sig]), pid))
+    amen.sort(reverse=True)
+    riesgo = {"base": [r2(v) for v in busq["riesgo_base"]],
+              "amenazas": [{"id": int(pid), "eo": r2(eo[pid], 3), "xp1": r2(X.at[pid, gw_sig]),
+                            "campo": r2(v)} for v, pid in amen[:10]]}
     return {
         "meta": meta,
         "decision": decision,
@@ -223,7 +281,9 @@ def armar_salida(t, cfg, proy, diag, est, busq, dec, ft, gws, gw_actual, gw_sig,
                       "compra": {str(k): v / 10 for k, v in est["compra"].items() if k in plantilla},
                       "xi": [int(plantilla[i]) for i in xi], "banco": [int(plantilla[i]) for i in banco],
                       "capitan": int(plantilla[cap]), "vice": int(plantilla[vice]),
-                      "valor_base": [r2(v) for v in busq["valor_base"]]},
+                      "valor_base": [r2(v) for v in busq["base"]]},
+        "riesgo": riesgo,
+        "chips": rchips,
         "calendario": calendario,
         "validacion": {"jornadas": valid, "capitania": auditoria},
         "jugadores": jugadores,
@@ -256,6 +316,7 @@ def escribir(res, salida):
         "plantilla": res["plantilla"],
         "calendario": {"equipos": res["calendario"]},
         "validacion": res["validacion"],
+        "chips": {"chips": res["chips"], "riesgo": res["riesgo"]},
     }
     jug = res["jugadores"]
     bloques = [jug[i:i + TAM_BLOQUE] for i in range(0, len(jug), TAM_BLOQUE)]
@@ -280,4 +341,4 @@ if __name__ == "__main__":
     a = ap.parse_args()
     r = ejecutar(local=a.local, salida=a.salida)
     d = r["decision"]
-    print("GW siguiente:", r["meta"]["gw_siguiente"], "| decisión:", d["tipo"], "| neto:", d["neto"])
+    print("GW siguiente:", r["meta"]["gw_siguiente"], "| decisión:", d["tipo"], "| plan:", d["plan"]["total"])

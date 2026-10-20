@@ -18,9 +18,21 @@ k_atajadas = 270
 ventana_forma = 4       # jornadas usadas para detectar jugadores en forma
 
 [decision]
-umbral_transferencia_libre = 1.5   # ganancia mínima para gastar una transferencia libre
-margen_golpe = 1.5                 # además de los 4 puntos del golpe
+permitir_golpes = false            # false = solo transferencias libres (nunca -4)
+umbral_transferencia_libre = 1.5   # ganancia mínima para gastar una libre; también lo que vale guardarla
+margen_golpe = 1.5                 # además de los 4 puntos del golpe (solo si permitir_golpes = true)
+# Protección de rank: cuánto castigar que tu equipo se separe del campo (riesgo = desviación típica
+# de tus puntos menos los del campo). 0 = solo puntos esperados. 0.25 = 1 punto de riesgo vale 0.25 pts.
+aversion_riesgo = 0.25
+capitania_campo = 0.6              # parte de los dueños del capitán más elegido que lo capitanea
 candidatos_por_posicion = 15       # para evaluar dobles transferencias
+
+[chips]
+# Ganancia esperada mínima para recomendar usar el chip en la próxima jornada
+triple_capitan = 9.0
+bench_boost = 12.0
+free_hit = 15.0
+wildcard = 20.0      # sobre todo el horizonte
 
 [puntuacion]
 # Reglas de FPL. Ajusta si cambian.

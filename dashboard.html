@@ -135,6 +135,31 @@ label.check { display: inline-flex; gap: 6px; align-items: center; font-size: 13
 .vacio-total { padding: 48px 16px; text-align: center; display: grid; gap: 10px; justify-items: center; }
 footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
 @media (prefers-reduced-motion: no-preference) { nav.tabs button { transition: color .15s, border-color .15s; } }
+
+.grid-col { display: grid; gap: 20px; min-width: 0; }
+.pasos { display: grid; gap: 6px; }
+.paso { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; font-size: 16px; }
+.paso .gw { font-family: var(--display); font-weight: 700; color: var(--accent); }
+tr.elegido td { background: var(--accent-soft); }
+.aviso { margin: 0; padding: 8px 12px; border-radius: var(--r); background: var(--warn-soft); color: var(--warn); font-size: 14px; }
+.orden { display: flex; gap: 6px; }
+.dir { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 6px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; text-transform: none; letter-spacing: 0; color: var(--ink); }
+table.jugadores th.g-pasado, table.jugadores th.g-futuro, table.jugadores th.g-temp { text-align: center; border-bottom: 2px solid var(--line); }
+table.jugadores th.g-pasado { color: var(--hi); border-bottom-color: var(--hi); }
+table.jugadores th.g-futuro { color: rgb(var(--heat)); border-bottom-color: rgb(var(--heat)); }
+td.pasado, th.pasado { background: var(--hi-soft); }
+td.heat.primero { border-left: 8px solid var(--surface); }
+.barras { display: flex; align-items: flex-end; gap: 3px; height: 28px; }
+.barras .b { width: 7px; background: var(--hi); border-radius: 2px 2px 0 0; }
+.barras .b.cero { background: var(--line); height: 2px !important; }
+.barras .b.vacia { background: transparent; border-bottom: 1px dashed var(--muted); height: 2px; }
+.grid-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+.chipbars { display: grid; gap: 6px; }
+.chipbar { display: grid; grid-template-columns: 44px minmax(0, 1fr) 40px; gap: 8px; align-items: center; }
+.pista { position: relative; height: 10px; background: var(--surface-2); border-radius: 3px; }
+.relleno { position: absolute; inset: 0 auto 0 0; background: var(--muted); border-radius: 3px; }
+.relleno.ok { background: var(--accent); }
+.marca { position: absolute; top: -3px; bottom: -3px; width: 2px; background: var(--ink); }
 </style>
 
 <div class="wrap">
@@ -154,6 +179,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
     <button role="tab" data-vista="fichajes">Fichajes</button>
     <button role="tab" data-vista="jugadores">Jugadores</button>
     <button role="tab" data-vista="calendario">Calendario</button>
+    <button role="tab" data-vista="chips">Chips</button>
     <button role="tab" data-vista="temporada">Temporada</button>
   </nav>
 
@@ -167,6 +193,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
     <section class="vista" id="v-fichajes" hidden></section>
     <section class="vista" id="v-jugadores" hidden></section>
     <section class="vista" id="v-calendario" hidden></section>
+    <section class="vista" id="v-chips" hidden></section>
     <section class="vista" id="v-temporada" hidden></section>
   </main>
 
@@ -174,9 +201,9 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
 </div>
 
 <script>
-const S = { docs: {}, vista: "resumen", jug: { pos: "TODAS", max: "", q: "", forma: false, sinHaul: false, sinSuerte: false, orden: "xpt", n: 60 },
+const S = { docs: {}, vista: "resumen", jug: { pos: "TODAS", max: "", q: "", forma: false, sinHaul: false, sinSuerte: false, orden: "xpt", asc: false, n: 60 },
   fich: { modo: "simples" }, cal: { modo: "ataque" }, plan: { sale: "", entra: "" } };
-const VISTAS = ["resumen", "fichajes", "jugadores", "calendario", "temporada"];
+const VISTAS = ["resumen", "fichajes", "jugadores", "calendario", "chips", "temporada"];
 const POS_ORDEN = { GKP: 0, DEF: 1, MID: 2, FWD: 3 };
 const POS_NOMBRE = { GKP: "Portero", DEF: "Defensas", MID: "Mediocampistas", FWD: "Delanteros" };
 
@@ -193,7 +220,8 @@ function datos() {
   const jug = []; for (let k = 0; k < (m.meta.bloques_jugadores || 0); k++) { const b = d["jugadores-" + k]; if (b) jug.push(...b.lista); }
   const porId = new Map(jug.map(j => [j.id, j]));
   const cal = new Map(((d.calendario || {}).equipos || []).map(e => [e.t, e]));
-  return { meta: m.meta, dec: m.decision, tr: d.transferencias || {}, pl: d.plantilla || {}, val: d.validacion || {}, jug, porId, cal };
+  const ch = d.chips || {};
+  return { meta: m.meta, dec: m.decision, tr: d.transferencias || {}, pl: d.plantilla || {}, val: d.validacion || {}, jug, porId, cal, chips: ch, riesgo: ch.riesgo || {} };
 }
 
 function nombreJ(D, id) { const j = D.porId.get(id); return j ? j.n : "#" + id; }
@@ -215,7 +243,7 @@ function estadoPill(j) {
 function senales(j) {
   if (!j) return ""; const f = j.f || []; const out = [];
   if (f.includes("forma")) out.push('<span class="pill good" title="Su xG + xA de las últimas jornadas está muy por encima de su promedio de la temporada">En forma</span>');
-  if (f.includes("haul")) out.push(`<span class="pill warn" title="El ${Math.round((j.conc || 0) * 100)}% de sus puntos salió de un solo partido">Haul aislado</span>`);
+  if (f.includes("haul")) out.push(`<span class="pill warn" title="El ${Math.round((j.conc || 0) * 100)}% de sus puntos y el ${Math.round((j.cxgi || 0) * 100)}% de su xG+xA salieron de un solo partido (GW${j.gwm}, hace ${j.hace} jornadas). La proyección no usa esos puntos.">Haul aislado</span>`);
   if (f.includes("suerte")) out.push(`<span class="pill warn" title="${j.g} goles con ${f2(j.xg)} de xG: difícil de sostener">Sobre su xG</span>`);
   if (j.pen) out.push('<span class="pill neutral" title="Primer lanzador de penales">Penales</span>');
   return `<div class="senales">${estadoPill(j)}${out.join("")}</div>`;
@@ -265,23 +293,29 @@ function textoMov(D, mov) {
 }
 
 function vistaResumen(D) {
-  const m = D.meta, dec = D.dec, H = m.horizonte, pl = D.pl, gw = m.gw_siguiente;
-  let titular, detalle = "";
-  if (dec.tipo === "guardar") {
-    titular = "Guarda la transferencia esta semana";
-    detalle = `<div class="muted">Ningún cambio supera el umbral (+${f1(m.modelo.umbral_ft)} pts por transferencia libre, o +4 y +${f1(m.modelo.margen_golpe)} por golpe) en las próximas ${H} jornadas.</div>`;
-  } else {
-    titular = dec.tipo === "doble" ? "Haz dos cambios" : "Haz un cambio";
-    const mv = dec.mov;
-    detalle = `<div class="mov">${textoMov(D, mv)}</div>
-      <div class="resultado">
+  const m = D.meta, dec = D.dec, H = m.horizonte, pl = D.pl, gw = m.gw_siguiente, gw2 = m.gws[1];
+  const plan = dec.plan || { pasos: [] };
+  const p1 = plan.pasos[0] || { n: 0 }, p2 = plan.pasos[1] || { n: 0 };
+  const titular = p1.n === 0 ? `Guarda la transferencia en la GW${gw}` : p1.n === 2 ? `Haz dos cambios en la GW${gw}` : `Haz un cambio en la GW${gw}`;
+  const golpes = m.modelo.permitir_golpes;
+  const paso = (p, g) => {
+    if (!p.mov) return `<div class="paso"><span class="gw">GW${g}</span><span>Guardar transferencia${p.ft != null ? "" : ""}</span><span class="muted small">${p.ft != null ? `tendrías ${p.ft} libre${p.ft > 1 ? "s" : ""}` : ""}</span></div>`;
+    return `<div class="paso"><span class="gw">GW${g}</span><span>${textoMov(D, p.mov)}</span><span class="pos num">${signo(p.mov.hT)} pts</span></div>`;
+  };
+  let detalle = `<div class="pasos">${paso(p1, gw)}${paso({ ...p2, ft: p2.n === 0 ? (plan.ft_final) : p2.ft }, gw2)}</div>`;
+  if (p1.mov) {
+    const mv = p1.mov;
+    detalle += `<div class="resultado">
         <div><div class="small muted">Próxima GW</div><div class="v ${mv.h1 >= 0 ? "pos" : "neg"}">${signo(mv.h1)}</div></div>
         <div><div class="small muted">3 jornadas</div><div class="v ${mv.h3 >= 0 ? "pos" : "neg"}">${signo(mv.h3)}</div></div>
-        <div><div class="small muted">${H} jornadas</div><div class="v pos">${signo(mv["h" + H])}</div></div>
-        <div><div class="small muted">Coste</div><div class="v">${dec.coste ? "−" + dec.coste : "0"}</div></div>
+        <div><div class="small muted">${H} jornadas</div><div class="v pos">${signo(mv.hT)}</div></div>
+        <div><div class="small muted">Riesgo vs campo</div><div class="v">${signo(mv.riesgo)}</div></div>
       </div>`;
   }
-  const ops = dec.opciones.map(o => `<span class="op ${o.tipo === dec.tipo ? "si" : ""}">${{ guardar: "Guardar", simple: "1 cambio", doble: "2 cambios" }[o.tipo]}: ${signo(o.neto)}</span>`).join("");
+  const nombrePlan = p => p.pasos.map((s, i) => `GW${m.gws[i]}: ${s.n === 0 ? "guardar" : s.n === 1 ? "1 cambio" : "2 cambios"}`).join(" → ");
+  const alternativas = (dec.planes || []).slice(0, 5).map((p, i) => `<tr${i === 0 ? ' class="elegido"' : ""}><td>${nombrePlan(p)}</td>
+    <td class="small">${p.pasos.filter(s => s.mov).map(s => textoMov(D, s.mov)).join("<br>") || '<span class="muted">Sin cambios</span>'}</td>
+    <td class="n">${p.ft_final}</td><td class="n"><b>${signo(p.total)}</b></td></tr>`).join("");
 
   // alineación
   const ids = pl.ids || [];
@@ -299,28 +333,39 @@ function vistaResumen(D) {
   const al = [];
   for (const id of ids) { const j = D.porId.get(id); if (!j) continue;
     if (j.st !== "a") al.push(`<li>${estadoPill(j)}<span><b>${esc(j.n)}</b> · ${esc(j.news || "")}</span></li>`);
-    if ((j.f || []).includes("haul")) al.push(`<li><span class="pill warn">Haul aislado</span><span><b>${esc(j.n)}</b>: ${Math.round(j.conc * 100)}% de sus ${j.pts} puntos en un partido; sin ese partido promedia ${f1(j.sinmejor)} por jornada.</span></li>`);
-    if ((j.f || []).includes("suerte")) al.push(`<li><span class="pill warn">Sobre su xG</span><span><b>${esc(j.n)}</b>: ${j.g} goles con ${f2(j.xg)} de xG.</span></li>`);
+    if ((j.f || []).includes("haul")) al.push(`<li><span class="pill warn">Haul aislado</span><span><b>${esc(j.n)}</b>: ${Math.round(j.conc * 100)}% de sus ${j.pts} puntos y ${Math.round((j.cxgi || 0) * 100)}% de su xG+xA salieron de la GW${j.gwm}${j.hace ? ` (hace ${j.hace} jornada${j.hace > 1 ? "s" : ""})` : ""}. Sin ese partido promedia ${f1(j.sinmejor)} por jornada.</span></li>`);
+    if ((j.f || []).includes("suerte")) al.push(`<li><span class="pill warn">Sobre su xG</span><span><b>${esc(j.n)}</b>: ${j.g} goles con ${f2(j.xg)} de xG. La proyección usa su xG, no sus goles.</span></li>`);
     if (j.st === "a" && j.xmin < 45 && (pl.xi || []).includes(id)) al.push(`<li><span class="pill warn">Minutos</span><span><b>${esc(j.n)}</b> es titular en tu XI pero el modelo espera solo ${Math.round(j.xmin)} minutos.</span></li>`);
   }
 
+  // protección de rank
+  const R = D.riesgo || {}, am = (R.amenazas || []).filter(a => D.porId.get(a.id)).slice(0, 6);
+  const filasAm = am.map(a => { const j = D.porId.get(a.id);
+    return `<tr><td>${etiquetaJ(D, a.id)}</td><td class="n">${Math.round(a.eo * 100)}%</td><td class="n">${f1(a.xp1)}</td><td>${senales(j)}</td></tr>`; }).join("");
+
   return `
-  <div class="panel veredicto"><h3>Veredicto GW${gw}</h3><div class="titular">${titular}</div>${detalle}<div class="opciones">${ops}</div></div>
+  <div class="panel veredicto"><h3>Plan para las próximas 2 jornadas</h3><div class="titular">${titular}</div>${detalle}
+    <p class="small muted" style="margin:0">${golpes ? "Se permiten golpes de −4 si compensan." : "Solo transferencias libres: el plan nunca incluye golpes."}
+    Guardar una transferencia vale +${f1(m.modelo.umbral_ft)} pts por cada libre que te quede al final (máximo 5).</p></div>
+  <div class="panel"><h2>Planes comparados</h2>
+    <div class="tabla"><table><thead><tr><th>Plan</th><th>Cambios</th><th class="n">Libres al final</th><th class="n">Valor</th></tr></thead><tbody>${alternativas}</tbody></table></div>
+    <p class="small muted" style="margin:0">Valor = puntos esperados ganados en el horizonte, menos el castigo por riesgo frente al campo, más lo que valen las transferencias libres guardadas. El cambio de la segunda semana se recalcula en cada corrida con datos nuevos.</p>
+  </div>
   <div class="grid2">
     <div class="panel"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline">
       <h2>Tu XI para la GW${gw}</h2><span class="muted small">${f1(xiTotal)} pts esperados con capitán</span></div>
       <div class="tabla"><table><thead><tr><th>Jugador</th><th>Rival</th><th class="n">xPts</th><th>Estado</th></tr></thead>
       <tbody>${filasXI.join("")}<tr class="pos-row"><td colspan="4">Banca</td></tr>${filasBanco.join("")}</tbody></table></div>
-      <p class="small muted" style="margin:0">Alineación con tu plantilla actual${(m.equipo.pendientes || []).length ? ", incluyendo los cambios que ya hiciste para esta jornada" : ""}. C = capitán, V = vicecapitán.</p>
+      <p class="small muted" style="margin:0">Alineación con tu plantilla actual${(m.equipo.pendientes || []).length ? ", incluyendo los cambios que ya hiciste para esta jornada" : ""}. xPts = puntos esperados en la GW${gw}. C = capitán, V = vicecapitán.</p>
     </div>
-    <div class="panel"><h2>Para revisar en tu plantilla</h2>
-      ${al.length ? `<ul class="alertas">${al.join("")}</ul>` : '<p class="muted" style="margin:0">Sin lesiones, dudas ni señales de alerta en tus 15 jugadores.</p>'}
-      <h3 style="margin-top:8px">Mejor reemplazo para cada jugador</h3>
-      <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">${H} GW</th></tr></thead><tbody>
-      ${ids.map(id => { const r = ((D.tr.por_salida || {})[id] || [])[0]; return r ? { id, r } : null; }).filter(Boolean)
-        .sort((a, b) => b.r["h" + H] - a.r["h" + H]).slice(0, 8)
-        .map(({ id, r }) => `<tr><td>${esc(nombreJ(D, id))}</td><td>${esc(nombreJ(D, r.entra))}</td><td class="n ${r["h" + H] >= 0 ? "pos" : "neg"}">${signo(r["h" + H])}</td></tr>`).join("")}
-      </tbody></table></div>
+    <div class="grid-col">
+      <div class="panel"><h2>Para revisar en tu plantilla</h2>
+        ${al.length ? `<ul class="alertas">${al.join("")}</ul>` : '<p class="muted" style="margin:0">Sin lesiones, dudas ni señales de alerta en tus 15 jugadores.</p>'}
+      </div>
+      <div class="panel"><h2>Protección de rank</h2>
+        <p class="small muted" style="margin:0">Jugadores muy poseídos que no tienes: si suman, el campo te saca ventaja. Están ordenados por cuántos puntos le dan al campo en la GW${gw}. Tu exposición actual: ${f1((R.base || [])[0])} pts de desviación frente al campo.</p>
+        ${filasAm ? `<div class="tabla"><table><thead><tr><th>Jugador</th><th class="n">Prop. efectiva</th><th class="n">xPts GW${gw}</th><th>Señales</th></tr></thead><tbody>${filasAm}</tbody></table></div>` : '<p class="muted" style="margin:0">Tienes a todos los jugadores con más de 10% de propiedad.</p>'}
+      </div>
     </div>
   </div>`;
 }
@@ -331,12 +376,14 @@ function filaXI(D, j, gw, pl, banca) {
 }
 
 function vistaFichajes(D) {
-  const m = D.meta, H = m.horizonte, modo = S.fich.modo;
+  const m = D.meta, H = m.horizonte, modo = S.fich.modo, ft = m.equipo.ft, golpes = m.modelo.permitir_golpes;
+  const bloqueado = !golpes && (modo === "dobles" ? ft < 2 : ft < 1);
   const lista = (modo === "simples" ? D.tr.simples : D.tr.dobles) || [];
   const filas = lista.map(t => {
     const sale = [].concat(t.sale), entra = [].concat(t.entra);
     return `<tr><td>${sale.map(s => etiquetaJ(D, s)).join("")}</td><td>${entra.map(e => etiquetaJ(D, e)).join("")}</td>
-      <td class="n">${signo(t.h1)}</td><td class="n">${signo(t.h3)}</td><td class="n"><b>${signo(t["h" + H])}</b></td>
+      <td class="n">${signo(t.h1)}</td><td class="n">${signo(t.h3)}</td><td class="n"><b>${signo(t.hT)}</b></td>
+      <td class="n" title="Cambio en tu desviación frente al campo: negativo = más protegido">${signo(t.riesgo)}</td>
       <td class="n">£${f1(t.banco_final / 10)}</td><td>${entra.map(e => senales(D.porId.get(e))).join("")}</td></tr>`;
   }).join("");
   const ids = D.pl.ids || [];
@@ -345,11 +392,13 @@ function vistaFichajes(D) {
   return `
   <div class="panel">
     <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:end">
-      <div><h2>Mejores movimientos</h2><div class="small muted">Ganancia frente a no hacer nada, comparando tu mejor XI con capitán en cada jornada. Las jornadas lejanas pesan menos.</div></div>
+      <div><h2>Mejores movimientos para la GW${m.gw_siguiente}</h2><div class="small muted">Ganancia frente a no hacer nada, comparando tu mejor XI con capitán en cada jornada. Las jornadas lejanas pesan menos.</div></div>
       <div class="seg" id="seg-fich"><button aria-pressed="${modo === "simples"}" data-modo="simples">1 cambio</button><button aria-pressed="${modo === "dobles"}" data-modo="dobles">2 cambios</button></div>
     </div>
-    <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">Próx. GW</th><th class="n">3 GW</th><th class="n">${H} GW</th><th class="n">Banco final</th><th>Señales de quien entra</th></tr></thead>
-    <tbody>${filas || '<tr><td colspan="7" class="muted">Sin movimientos posibles con tu presupuesto.</td></tr>'}</tbody></table></div>
+    ${bloqueado ? `<p class="aviso">Tienes ${ft} transferencia${ft === 1 ? "" : "s"} libre${ft === 1 ? "" : "s"}: ${modo === "dobles" ? "dos cambios esta semana costarían un golpe. Sirven como referencia para la próxima jornada si guardas." : "cualquier cambio costaría un golpe."}</p>` : ""}
+    <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">Próx. GW</th><th class="n">3 GW</th><th class="n">${H} GW</th><th class="n">Riesgo</th><th class="n">Banco final</th><th>Señales de quien entra</th></tr></thead>
+    <tbody>${filas || '<tr><td colspan="8" class="muted">Sin movimientos posibles con tu presupuesto.</td></tr>'}</tbody></table></div>
+    <p class="small muted" style="margin:0">Riesgo: cuánto cambia la diferencia típica entre tus puntos y los del campo. Negativo significa que el cambio te acerca al campo (más protección); positivo, que te diferencia más.</p>
   </div>
   <div class="panel">
     <h2>Prueba tu propio cambio</h2>
@@ -371,27 +420,33 @@ function planificador(D) {
   dl.innerHTML = cands.slice(0, 150).map(j => `<option value="${esc(j.n)} · ${esc(j.e)}">£${f1(j.$)}${j.$ > tope + 1e-9 ? " (no alcanza)" : ""}</option>`).join("");
   const q = S.plan.entra.split(" · ")[0].trim().toLowerCase();
   const entra = q ? cands.find(j => j.n.toLowerCase() === q) : null;
-  if (!entra) { res.innerHTML = `Presupuesto para un ${POS_NOMBRE[sale.p].toLowerCase().replace(/s$/, "")}: <b>£${f1(tope)}</b> (banco £${f1(banco)} + venta de ${esc(sale.n)} £${f1(venta)}).`; return; }
+  if (!entra) { res.innerHTML = `Presupuesto: <b>£${f1(tope)}</b> (banco £${f1(banco)} + venta de ${esc(sale.n)} £${f1(venta)}).`; return; }
   const problemas = [];
   if (entra.$ > tope + 1e-9) problemas.push(`Te faltan £${f1(entra.$ - tope)}.`);
   const club = ids.filter(i => i !== saleId).map(i => D.porId.get(i).t).filter(t => t === entra.t).length;
   if (club >= 3) problemas.push(`Ya tienes 3 jugadores de ${esc(entra.e)}.`);
+  if (D.meta.equipo.ft < 1 && !D.meta.modelo.permitir_golpes) problemas.push("No te quedan transferencias libres esta semana: sería un golpe de −4.");
   const H = D.meta.horizonte;
   const base = valorPlantilla(D, ids), nueva = valorPlantilla(D, ids.map(i => i === saleId ? entra.id : i));
   const d = nueva.map((v, k) => v - base[k]); const acum = h => d.slice(0, h).reduce((s, v) => s + v, 0);
-  const golpe = D.meta.equipo.ft >= 1 ? 0 : 4;
   res.innerHTML = `${problemas.length ? `<p class="neg" style="margin:0 0 8px">${problemas.join(" ")}</p>` : ""}
     <div class="resultado">
       <div><div class="small muted">Próxima GW</div><div class="v ${acum(1) >= 0 ? "pos" : "neg"}">${signo(acum(1))}</div></div>
       <div><div class="small muted">3 jornadas</div><div class="v ${acum(3) >= 0 ? "pos" : "neg"}">${signo(acum(3))}</div></div>
       <div><div class="small muted">${H} jornadas</div><div class="v ${acum(H) >= 0 ? "pos" : "neg"}">${signo(acum(H))}</div></div>
-      <div><div class="small muted">Neto con golpe</div><div class="v ${acum(H) - golpe >= 0 ? "pos" : "neg"}">${signo(acum(H) - golpe)}</div></div>
+      <div><div class="small muted">Propiedad</div><div class="v">${f1(entra.own)}%</div></div>
     </div>
-    <p style="margin:8px 0 0">${esc(entra.n)}: ${Math.round(entra.xmin)} min esperados, ${f2(entra.xg90)} xG y ${f2(entra.xa90)} xA por 90. ${senales(entra)}</p>`;
+    <p style="margin:8px 0 0">${esc(entra.n)}: ${Math.round(entra.xmin)} min esperados en la próxima GW, ${f2(entra.xg90)} xG y ${f2(entra.xa90)} xA por 90. ${senales(entra)}</p>`;
+}
+
+function barritas(arr, gws, mins) {
+  const max = 15;
+  return `<div class="barras" title="${gws.map((g, i) => `GW${g}: ${arr[i] == null ? "sin partido" : arr[i] + " pts, " + (mins[i] ?? 0) + " min"}`).join(" · ")}">${arr.map((v, i) =>
+    v == null ? '<span class="b vacia"></span>' : `<span class="b ${mins[i] === 0 ? "cero" : ""}" style="height:${Math.max(2, Math.min(1, Math.max(0, v) / max) * 26)}px"></span>`).join("")}</div>`;
 }
 
 function vistaJugadores(D) {
-  const F = S.jug, H = D.meta.horizonte, gws = D.meta.gws;
+  const F = S.jug, H = D.meta.horizonte, gws = D.meta.gws, gp = D.meta.gws_pasados || [], gw = D.meta.gw_siguiente;
   let L = D.jug.filter(j => j.st !== "u");
   if (F.pos !== "TODAS") L = L.filter(j => j.p === F.pos);
   if (F.max) L = L.filter(j => j.$ <= Number(F.max));
@@ -399,35 +454,84 @@ function vistaJugadores(D) {
   if (F.forma) L = L.filter(j => (j.f || []).includes("forma"));
   if (F.sinHaul) L = L.filter(j => !(j.f || []).includes("haul"));
   if (F.sinSuerte) L = L.filter(j => !(j.f || []).includes("suerte"));
-  const clave = { xpt: j => j.xpt, xp1: j => j.xp[0], valor: j => j.xpt / j.$, own: j => j.own, tend: j => j.tend ?? -9 }[F.orden];
-  L.sort((a, b) => clave(b) - clave(a));
+  const suma = a => (a || []).reduce((s, v) => s + (v || 0), 0);
+  const clave = { xpt: j => j.xpt, xp1: j => j.xp[0], valor: j => j.xpt / j.$, own: j => j.own, precio: j => j.$,
+    ult: j => suma(j.ult), xgi: j => j.ult_xgi90 ?? -1, tend: j => j.tend ?? -9 }[F.orden] || (j => j.xpt);
+  const dir = F.asc ? 1 : -1;
+  L.sort((a, b) => dir * (clave(a) - clave(b)));
   const maxXp = Math.max(1, ...D.jug.map(j => Math.max(...j.xp)));
   const mios = new Set(D.pl.ids || []);
-  const filas = L.slice(0, F.n).map(j => `<tr><td>${etiquetaJ(D, j.id).replace("</b>", "</b>" + (mios.has(j.id) ? ' <span class="pill neutral">Tuyo</span>' : ""))}</td>
-    <td class="n">${f1(j.own)}%</td>${j.xp.map(v => `<td class="heat" ${heat(v, maxXp)}>${f1(v)}</td>`).join("")}
+  const filas = L.slice(0, F.n).map(j => {
+    const posib = (j.ult_part || 0) * 90;
+    return `<tr><td>${etiquetaJ(D, j.id).replace("</b>", "</b>" + (mios.has(j.id) ? ' <span class="pill neutral">Tuyo</span>' : ""))}</td>
+    <td class="n">${f1(j.own)}%</td>
+    <td class="pasado">${j.ult ? barritas(j.ult, gp, j.ultmin) : ""}</td>
+    <td class="pasado n">${j.ult ? suma(j.ult) : "–"}</td>
+    <td class="pasado n" title="Minutos jugados de ${posib} posibles; titular en ${j.ult_tit ?? 0} de ${j.ult_part ?? 0}">${j.ult_min ?? 0}<span class="muted">/${posib}</span></td>
+    <td class="pasado n">${j.ult_ga ?? 0}</td><td class="pasado n">${f2(j.ult_xgi90)}</td>
+    ${j.xp.map((v, i) => `<td class="heat${i === 0 ? " primero" : ""}" ${heat(v, maxXp)}>${f1(v)}</td>`).join("")}
     <td class="n"><b>${f1(j.xpt)}</b></td><td class="n">${Math.round(j.xmin || 0)}</td>
-    <td class="n" title="Mediana / media de puntos por partido jugado">${f1(j.med)} / ${f1(j.media)}</td>
-    <td class="n">${j.conc != null ? Math.round(j.conc * 100) + "%" : "–"}</td><td>${senales(j)}</td></tr>`).join("");
+    <td class="n" title="Mediana / media de puntos por partido jugado en la temporada">${f1(j.med)} / ${f1(j.media)}</td>
+    <td class="n" title="${j.gwm ? `Mejor partido: GW${j.gwm}` : ""}">${j.conc != null ? Math.round(j.conc * 100) + "%" + (j.gwm ? ` <span class="muted">GW${j.gwm}</span>` : "") : "–"}</td>
+    <td>${senales(j)}</td></tr>`; }).join("");
   const chip = p => `<button aria-pressed="${F.pos === p}" data-pos="${p}">${p === "TODAS" ? "Todas" : p}</button>`;
+  const ordenes = [["xpt", `Puntos esperados ${H} GW`], ["xp1", `Puntos esperados GW${gw}`], ["valor", "Puntos esperados por millón"],
+    ["ult", "Puntos últimas 5 GW"], ["xgi", "xG+xA/90 últimas 5 GW"], ["tend", "Tendencia xG+xA"], ["own", "Propiedad"], ["precio", "Precio"]];
   return `<div class="panel">
     <div class="controles">
       <div class="campo">Posición<div class="chips" id="f-pos">${["TODAS", "GKP", "DEF", "MID", "FWD"].map(chip).join("")}</div></div>
       <label class="campo" for="f-max">Precio máx. (£)<input id="f-max" type="number" step="0.1" min="3.8" max="16" value="${esc(F.max)}" style="width:90px"></label>
       <label class="campo" for="f-q">Buscar<input id="f-q" type="search" placeholder="Nombre o equipo" value="${esc(F.q)}" style="width:150px"></label>
-      <label class="campo" for="f-orden">Ordenar por<select id="f-orden">
-        ${[["xpt", `Puntos ${H} GW`], ["xp1", "Próxima GW"], ["valor", "Puntos por millón"], ["own", "Propiedad"], ["tend", "Tendencia xGI"]].map(([v, t]) => `<option value="${v}" ${F.orden === v ? "selected" : ""}>${t}</option>`).join("")}
-      </select></label>
+      <div class="campo"><label for="f-orden">Ordenar por</label><div class="orden">
+        <select id="f-orden">${ordenes.map(([v, t]) => `<option value="${v}" ${F.orden === v ? "selected" : ""}>${t}</option>`).join("")}</select>
+        <button id="f-dir" class="dir" aria-label="${F.asc ? "Orden ascendente; cambiar a descendente" : "Orden descendente; cambiar a ascendente"}" title="${F.asc ? "Ascendente" : "Descendente"}">${F.asc ? "↑ Menor a mayor" : "↓ Mayor a menor"}</button>
+      </div></div>
       <div class="campo">Señales<div style="display:flex;gap:12px;flex-wrap:wrap">
         <label class="check" for="f-forma"><input type="checkbox" id="f-forma" ${F.forma ? "checked" : ""}> Solo en forma</label>
         <label class="check" for="f-haul"><input type="checkbox" id="f-haul" ${F.sinHaul ? "checked" : ""}> Ocultar hauls aislados</label>
         <label class="check" for="f-suerte"><input type="checkbox" id="f-suerte" ${F.sinSuerte ? "checked" : ""}> Ocultar sobre su xG</label></div></div>
     </div>
-    <div class="tabla"><table><thead><tr><th>Jugador</th><th class="n">Prop.</th>${gws.map(g => `<th class="n">GW${g}</th>`).join("")}
-      <th class="n">Total</th><th class="n">Min. esp.</th><th class="n">Mediana / media</th><th class="n">Mejor partido</th><th>Señales</th></tr></thead>
-      <tbody>${filas || `<tr><td colspan="${8 + gws.length}" class="muted">Ningún jugador cumple los filtros.</td></tr>`}</tbody></table></div>
+    <div class="tabla"><table class="jugadores"><thead>
+      <tr class="grupos"><th colspan="2"></th><th colspan="5" class="g-pasado">Últimas 5 jornadas · real (GW${gp[0] ?? "?"}–${gp[gp.length - 1] ?? "?"})</th>
+        <th colspan="${gws.length + 2}" class="g-futuro">Próximas ${gws.length} jornadas · proyección</th><th colspan="3" class="g-temp">Temporada</th></tr>
+      <tr><th>Jugador</th><th class="n">Prop.</th>
+      <th class="pasado">Puntos</th><th class="pasado n">Total</th><th class="pasado n">Min</th><th class="pasado n">G+A</th><th class="pasado n">xG+xA/90</th>
+      ${gws.map(g => `<th class="n">GW${g}</th>`).join("")}<th class="n">Total</th><th class="n">Min GW${gw}</th>
+      <th class="n">Pts/partido<br>mediana / media</th><th class="n">Mejor<br>partido</th><th>Señales</th></tr></thead>
+      <tbody>${filas || `<tr><td colspan="${12 + gws.length}" class="muted">Ningún jugador cumple los filtros.</td></tr>`}</tbody></table></div>
     ${L.length > F.n ? `<button class="mas" id="f-mas">Mostrar ${Math.min(60, L.length - F.n)} más (${L.length - F.n} ocultos)</button>` : ""}
-    <p class="small muted" style="margin:0">Total = puntos esperados en ${H} jornadas, con menos peso para las más lejanas. "Mejor partido" es la parte de sus puntos que salió de un solo partido: más de 45% indica que sus números dependen de un haul.</p>
+    <p class="small muted" style="margin:0"><b>Últimas 5 jornadas:</b> lo que el jugador hizo de verdad, barra por jornada (gris claro = no jugó; hueco = su equipo no jugó). <b>Proyección:</b> puntos esperados por jornada; Total pondera menos las jornadas lejanas; Min GW${gw} son los minutos esperados solo en la próxima jornada. <b>Temporada:</b> mediana y media por partido jugado, y qué parte de sus puntos salió de su mejor partido.</p>
   </div>`;
+}
+
+function vistaChips(D) {
+  const C = (D.chips || {}).chips || {}, det = C.detalle || [], m = D.meta;
+  const usados = (m.chips || []).map(c => `<span class="pill neutral">${esc({ "3xc": "Triple capitán", bboost: "Bench Boost", freehit: "Free Hit", wildcard: "Wildcard" }[c.chip] || c.chip)} · GW${c.gw}</span>`).join(" ");
+  if (!det.length) return `<div class="panel"><h2>Chips</h2><p class="muted" style="margin:0">No tienes chips disponibles en este tramo de la temporada.</p>${usados ? `<div class="senales">${usados}</div>` : ""}</div>`;
+  const tarjeta = c => {
+    const estado = c.usar ? `<span class="pill good">Úsalo en la GW${m.gw_siguiente}</span>` : c.supera_umbral && c.mejor_gw !== m.gw_siguiente ? `<span class="pill warn">Mejor en la GW${c.mejor_gw}</span>` : '<span class="pill neutral">Guárdalo</span>';
+    const max = Math.max(c.umbral, ...((c.por_gw || []).map(x => x.valor)), 1);
+    const barras = (c.por_gw || []).map(x => `<div class="chipbar"><span class="small muted">GW${x.gw}</span>
+      <span class="pista"><span class="relleno ${x.valor >= c.umbral ? "ok" : ""}" style="width:${Math.max(2, x.valor / max * 100)}%"></span><span class="marca" style="left:${c.umbral / max * 100}%"></span></span>
+      <span class="num small">${f1(x.valor)}</span></div>`).join("");
+    const que = { "3xc": `puntos extra de tu mejor capitán${c.capitan ? ` (${esc(nombreJ(D, c.capitan))})` : ""}`, bboost: "puntos de tus 4 suplentes",
+      freehit: "puntos que ganarías con el mejor equipo posible solo para esa jornada", wildcard: `puntos ganados en ${m.horizonte} jornadas con la mejor plantilla posible` }[c.chip];
+    let extra = "";
+    if (c.chip === "wildcard" && c.wildcard) {
+      extra = `<div class="small"><b>Saldrían:</b> ${c.wildcard.salen.map(i => esc(nombreJ(D, i))).join(", ") || "—"}<br><b>Entrarían:</b> ${c.wildcard.entran.map(i => esc(nombreJ(D, i))).join(", ") || "—"}</div>`;
+    }
+    return `<div class="panel chip"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline">
+      <h2>${esc(c.nombre)}</h2>${estado}</div>
+      <div class="small muted">Disponible hasta la GW${c.hasta}${c.vence_en_horizonte ? " · vence dentro de las próximas jornadas" : ""}. Mide los ${que}.</div>
+      <div class="resultado"><div><div class="small muted">${c.chip === "wildcard" ? "Ganancia" : "Mejor jornada"}</div><div class="v">${c.chip === "wildcard" ? signo(c.valor) : "GW" + c.mejor_gw}</div></div>
+        <div><div class="small muted">${c.chip === "wildcard" ? "Umbral" : "Valor esperado"}</div><div class="v">${c.chip === "wildcard" ? f1(c.umbral) : f1(c.valor)}</div></div>
+        ${c.chip !== "wildcard" ? `<div><div class="small muted">Umbral para usarlo</div><div class="v">${f1(c.umbral)}</div></div>` : ""}</div>
+      ${barras ? `<div class="chipbars">${barras}</div>` : ""}${extra}</div>`;
+  };
+  return `<div class="panel"><h2>¿Cuándo usar tus chips?</h2>
+    <p class="small muted" style="margin:0">Valor esperado de cada chip en las próximas ${m.horizonte} jornadas con tu plantilla actual. La línea vertical es el umbral para recomendarlo (editable en <code>config.toml</code>). Las jornadas dobles y en blanco aparecen solas cuando FPL las programa; mientras no haya ninguna, guardar suele ser lo mejor.</p>
+    ${usados ? `<div class="senales">Usados: ${usados}</div>` : ""}</div>
+    <div class="grid-chips">${det.map(tarjeta).join("")}</div>`;
 }
 
 function vistaCalendario(D) {
@@ -513,7 +617,7 @@ function render() {
   if (!D) return;
   pintarTablero(D);
   const el = document.getElementById("v-" + S.vista);
-  const fn = { resumen: vistaResumen, fichajes: vistaFichajes, jugadores: vistaJugadores, calendario: vistaCalendario, temporada: vistaTemporada }[S.vista];
+  const fn = { resumen: vistaResumen, fichajes: vistaFichajes, jugadores: vistaJugadores, calendario: vistaCalendario, chips: vistaChips, temporada: vistaTemporada }[S.vista];
   try { el.innerHTML = fn(D); } catch (e) { el.innerHTML = `<div class="panel"><p class="neg">No se pudo mostrar esta sección: ${esc(e.message)}</p></div>`; console.error(e); }
   if (S.vista === "fichajes") planificador(D);
   if (S.vista === "temporada") {
@@ -533,6 +637,7 @@ document.addEventListener("click", e => {
   if (t.closest("#seg-cal")) { S.cal.modo = t.dataset.modo; guardarPref(); render(); return; }
   if (t.closest("#f-pos")) { S.jug.pos = t.dataset.pos; S.jug.n = 60; guardarPref(); render(); return; }
   if (t.id === "f-mas") { S.jug.n += 60; render(); return; }
+  if (t.id === "f-dir") { S.jug.asc = !S.jug.asc; guardarPref(); render(); document.getElementById("f-dir")?.focus(); return; }
 });
 let pausa;
 document.addEventListener("input", e => {
