@@ -13,7 +13,7 @@ import tomllib
 import numpy as np
 import pandas as pd
 
-from . import chips, datos, diagnosticos, modelo, predicciones, transferencias
+from . import chips, datos, diagnosticos, modelo, momento, predicciones, transferencias
 from .api import Fuente
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -163,6 +163,7 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
             "ptit": r2(b.at[pid, "p_tit"]), "xg90": r2(b.at[pid, "xg90"]), "xa90": r2(b.at[pid, "xa90"]),
             "pdc": r2(b.at[pid, "p_dc"]) if r["pos"] != "GKP" else None,
             "eo": r2(eo.get(pid, 0), 3),
+            "proy": r2(r["proy_precio"], 0),
         }
         if pid in u_tot.index:
             ut = u_tot.loc[pid]
@@ -259,6 +260,7 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
     decision = {
         "tipo": {0: "guardar", 1: "simple", 2: "doble"}[primero["n"]],
         "mov": mov(primero["mov"]) if primero["mov"] else None,
+        "momento": momento.evaluar(primero["mov"], t["jugadores"], est, deadline, ahora),
         "plan": plan_json(mejor), "planes": [plan_json(p) for p in planes[:6]],
     }
     # Riesgo frente al campo: jugadores muy poseídos que no tienes, ordenados por lo que el campo gana con ellos
@@ -275,8 +277,10 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
     return {
         "meta": meta,
         "decision": decision,
-        "transferencias": {"simples": [mov(m) for m in busq["simples"][:30]],
-                           "dobles": [mov(m) for m in busq["dobles"][:20]],
+        "transferencias": {"simples": [dict(mov(m), momento=momento.evaluar(m, t["jugadores"], est, deadline, ahora))
+                                       for m in busq["simples"][:30]],
+                           "dobles": [dict(mov(m), momento=momento.evaluar(m, t["jugadores"], est, deadline, ahora))
+                                      for m in busq["dobles"][:20]],
                            "por_salida": {str(k): v for k, v in por_salida.items()}},
         "plantilla": {"ids": [int(i) for i in plantilla],
                       "venta": {str(k): v / 10 for k, v in est["venta"].items()},

@@ -139,6 +139,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
 .grid-col { display: grid; gap: 20px; min-width: 0; }
 .pasos { display: grid; gap: 6px; }
 .paso { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; font-size: 16px; }
+.momento { display: flex; gap: 10px; align-items: baseline; font-size: 14px; }
 .paso .gw { font-family: var(--display); font-weight: 700; color: var(--accent); }
 tr.elegido td { background: var(--accent-soft); }
 .aviso { margin: 0; padding: 8px 12px; border-radius: var(--r); background: var(--warn-soft); color: var(--warn); font-size: 14px; }
@@ -247,7 +248,16 @@ function senales(j) {
   if (f.includes("haul")) out.push(`<span class="pill warn" title="El ${Math.round((j.conc || 0) * 100)}% de sus puntos y el ${Math.round((j.cxgi || 0) * 100)}% de su xG+xA salieron de un solo partido (GW${j.gwm}, hace ${j.hace} jornadas). La proyección no usa esos puntos.">Haul aislado</span>`);
   if (f.includes("suerte")) out.push(`<span class="pill warn" title="${j.g} goles con ${f2(j.xg)} de xG: difícil de sostener">Sobre su xG</span>`);
   if (j.pen) out.push('<span class="pill neutral" title="Primer lanzador de penales">Penales</span>');
+  if (j.proy != null && j.proy >= 100) out.push(`<span class="pill neutral" title="Proyección de precio: ${j.proy}%. Sube esta noche.">£ ↑ hoy</span>`);
+  else if (j.proy != null && j.proy <= -100) out.push(`<span class="pill neutral" title="Proyección de precio: ${j.proy}%. Baja esta noche.">£ ↓ hoy</span>`);
   return `<div class="senales">${estadoPill(j)}${out.join("")}</div>`;
+}
+function momentoPill(mo, corto) {
+  if (!mo) return "";
+  const cls = { hoy: "cap", esperar: "warn", deadline: "bad", puede_esperar: "neutral" }[mo.estado] || "neutral";
+  const et = { hoy: "Hazlo hoy", esperar: "Espera noticias", deadline: "Último día", puede_esperar: "Puedes esperar" }[mo.estado] || "";
+  const det = esc(mo.texto + (mo.otros && mo.otros.length ? " " + mo.otros.join("; ") + "." : ""));
+  return corto ? `<span class="pill ${cls}" title="${det}">${et}</span>` : `<div class="momento"><span class="pill ${cls}">${et}</span><span>${det}</span></div>`;
 }
 function heat(v, max) { const a = Math.max(0.05, Math.min(0.9, (v || 0) / max)); const oscuro = a > 0.55;
   return `style="background: rgba(var(--heat), ${a.toFixed(2)}); color: ${oscuro ? "#fff" : "var(--ink)"}"`; }
@@ -303,7 +313,7 @@ function vistaResumen(D) {
     if (!p.mov) return `<div class="paso"><span class="gw">GW${g}</span><span>Guardar transferencia${p.ft != null ? "" : ""}</span><span class="muted small">${p.ft != null ? `tendrías ${p.ft} libre${p.ft > 1 ? "s" : ""}` : ""}</span></div>`;
     return `<div class="paso"><span class="gw">GW${g}</span><span>${textoMov(D, p.mov)}</span><span class="pos num">${signo(p.mov.hT)} pts</span></div>`;
   };
-  let detalle = `<div class="pasos">${paso(p1, gw)}${paso({ ...p2, ft: p2.n === 0 ? (plan.ft_final) : p2.ft }, gw2)}</div>`;
+  let detalle = `<div class="pasos">${paso(p1, gw)}${paso({ ...p2, ft: p2.n === 0 ? (plan.ft_final) : p2.ft }, gw2)}</div>${momentoPill(dec.momento)}`;
   if (p1.mov) {
     const mv = p1.mov;
     detalle += `<div class="resultado">
@@ -388,6 +398,7 @@ function vistaFichajes(D) {
       <td class="n" title="Cambio en tu desviación frente al campo: negativo = más protegido">${signo(t.riesgo)}</td>
       <td class="n">£${f1(t.banco_final / 10)}</td>
       <td class="n" title="Puntos esperados − ${f2(m.modelo.aversion_riesgo)} × riesgo + ${f2(m.modelo.valor_dinero)} pts por £1m que queda en el banco"><b>${signo(t.puntaje)}</b></td>
+      <td>${momentoPill(t.momento, true)}</td>
       <td>${entra.map(e => senales(D.porId.get(e))).join("")}</td></tr>`;
   }).join("");
   const ids = D.pl.ids || [];
@@ -400,8 +411,8 @@ function vistaFichajes(D) {
       <div class="seg" id="seg-fich"><button aria-pressed="${modo === "simples"}" data-modo="simples">1 cambio</button><button aria-pressed="${modo === "dobles"}" data-modo="dobles">2 cambios</button></div>
     </div>
     ${bloqueado ? `<p class="aviso">Tienes ${ft} transferencia${ft === 1 ? "" : "s"} libre${ft === 1 ? "" : "s"}: ${modo === "dobles" ? "dos cambios esta semana costarían un golpe. Sirven como referencia para la próxima jornada si guardas." : "cualquier cambio costaría un golpe."}</p>` : ""}
-    <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">Próx. GW</th><th class="n">3 GW</th><th class="n">${H} GW</th><th class="n">Riesgo</th><th class="n">Banco final</th><th class="n">Valor total</th><th>Señales de quien entra</th></tr></thead>
-    <tbody>${filas || '<tr><td colspan="9" class="muted">Sin movimientos posibles con tu presupuesto.</td></tr>'}</tbody></table></div>
+    <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">Próx. GW</th><th class="n">3 GW</th><th class="n">${H} GW</th><th class="n">Riesgo</th><th class="n">Banco final</th><th class="n">Valor total</th><th>Cuándo</th><th>Señales de quien entra</th></tr></thead>
+    <tbody>${filas || '<tr><td colspan="10" class="muted">Sin movimientos posibles con tu presupuesto.</td></tr>'}</tbody></table></div>
     <p class="small muted" style="margin:0">Riesgo: cuánto cambia la diferencia típica entre tus puntos y los del campo; negativo te acerca al campo (más protección). Valor total: puntos esperados, menos el castigo por riesgo, más ${f2(m.modelo.valor_dinero)} pts por cada £1m que el cambio deja libre (o menos, si lo gasta). El dinero cuenta porque financia mejoras futuras. Es el criterio con el que se ordena la tabla.</p>
   </div>
   <div class="panel">

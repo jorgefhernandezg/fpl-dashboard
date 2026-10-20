@@ -33,13 +33,21 @@ def tablas(raw):
             j[c] = np.nan
         j[c] = _num(j[c])
     j["pos"] = j["element_type"].map(POS)
+    # Proyección de cambio de precio para esta noche (offset 0): ±100% o más = cambio previsto
+    def _proy(v):
+        if isinstance(v, list):
+            for it in v:
+                if isinstance(it, dict) and it.get("offset") == 0:
+                    return it.get("projected_percent")
+        return None
+    j["proy_precio"] = _num(j["price_change_projections"].apply(_proy)) if "price_change_projections" in j.columns else np.nan
     j["precio"] = j["now_cost"] / 10.0
     j["propiedad"] = j["selected_by_percent"]
     j = j.merge(equipos, on="team", how="left")
     j = j[["id", "web_name", "team", "abrev", "pos", "precio", "now_cost", "propiedad", "status",
            "chance_of_playing_next_round", "news", "ep_next", "penalties_order",
            "direct_freekicks_order", "corners_and_indirect_freekicks_order",
-           "transfers_in_event", "transfers_out_event"]].copy()
+           "transfers_in_event", "transfers_out_event", "proy_precio"]].copy()
 
     ev = pd.DataFrame(boot["events"])
     ev["deadline"] = pd.to_datetime(ev["deadline_time"], utc=True)
