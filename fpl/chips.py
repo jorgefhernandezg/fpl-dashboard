@@ -32,8 +32,10 @@ def vigentes(boot, usados, gw_sig):
     return out
 
 
-def _mejor_equipo(X, jug, gws_idx, pesos, presupuesto):
-    """Plantilla de 15 que maximiza Σ pesos·(XI + capitán) en las jornadas indicadas. Programación entera."""
+def _mejor_equipo(X, jug, gws_idx, pesos, presupuesto, bb=None):
+    """Plantilla de 15 que maximiza Σ pesos·(XI + capitán) en las jornadas indicadas. Programación entera.
+
+    bb: posición (dentro de gws_idx) de una jornada con Bench Boost, donde suman los 15."""
     ids = list(X.index)
     n, K = len(ids), len(gws_idx)
     xp = X.values[:, gws_idx]
@@ -47,6 +49,9 @@ def _mejor_equipo(X, jug, gws_idx, pesos, presupuesto):
         obj[n + k * n: n + (k + 1) * n] = -pesos[k] * xp[:, k]
         obj[n + n * K + k * n: n + n * K + (k + 1) * n] = -pesos[k] * xp[:, k]
     obj[:n] = -0.01 * xp.sum(axis=1)  # desempate: banca útil
+    if bb is not None:
+        obj[n + bb * n: n + (bb + 1) * n] = 0.0
+        obj[:n] += -pesos[bb] * xp[:, bb]
     filas, lo, hi = [], [], []
 
     def fila(coefs):
@@ -133,6 +138,21 @@ def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg, ganancia_plan=0.0
                   "plan_libres": round(ganancia_plan, 2), "entran": [int(i) for i in eq if i not in plantilla],
                   "salen": [int(i) for i in plantilla if i not in eq]}
 
+    # ¿Conviene encadenar Wildcard y luego Bench Boost? (no se pueden usar dos chips en la misma jornada)
+    combo = None
+    tiene = {v["chip"] for v in vig}
+    if wc and {"wildcard", "bboost"} <= tiene:
+        opciones = []
+        for k in range(1, H):
+            _, v_combo = _mejor_equipo(Xc, j, list(range(H)), pesos, presupuesto, bb=k)
+            banca_wc = (v_combo - (wc["bruta"] + actual)) / pesos[k]   # banca obtenible, neta del sacrificio
+            opciones.append({"gw": gws[k], "banca_tras_wc": round(banca_wc, 2),
+                             "banca_actual": por_gw[k]["bboost"],
+                             "ventaja": round(banca_wc - por_gw[k]["bboost"], 2)})
+        if opciones:
+            combo = {"wildcard_gw": gw_sig, "opciones": opciones,
+                     "mejor": max(opciones, key=lambda o: o["banca_tras_wc"])}
+
     umbral = {"3xc": c.get("triple_capitan", 9.0), "bboost": c.get("bench_boost", 12.0),
               "freehit": c.get("free_hit", 15.0), "wildcard": c.get("wildcard", 20.0)}
     detalle = []
@@ -160,4 +180,4 @@ def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg, ganancia_plan=0.0
                         "por_gw": [{"gw": f["gw"], "valor": f[ch]} for f in validos],
                         "restantes": v["hasta"] - gw_sig + 1,
                         "capitan": mejor.get("capitan") if ch == "3xc" else None})
-    return {"vigentes": vig, "detalle": detalle, "por_gw": por_gw}
+    return {"vigentes": vig, "detalle": detalle, "por_gw": por_gw, "combo_wc_bb": combo}

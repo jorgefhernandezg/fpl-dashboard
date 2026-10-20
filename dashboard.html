@@ -201,18 +201,19 @@ td.heat.primero { border-left: 8px solid var(--surface); }
 </div>
 
 <script>
-const S = { docs: {}, vista: "resumen", jug: { pos: "TODAS", max: "", q: "", forma: false, sinHaul: false, sinSuerte: false, orden: "xpt", asc: false, n: 60 },
+const S = { docs: {}, vista: "resumen", jug: { pos: "TODAS", max: "", nombre: "", equipo: "", forma: false, sinHaul: false, sinSuerte: false, orden: "xpt", asc: false, n: 60 },
   fich: { modo: "simples" }, cal: { modo: "ataque" }, plan: { sale: "", entra: "" } };
 const VISTAS = ["resumen", "fichajes", "jugadores", "calendario", "chips", "temporada"];
 const POS_ORDEN = { GKP: 0, DEF: 1, MID: 2, FWD: 3 };
 const POS_NOMBRE = { GKP: "Portero", DEF: "Defensas", MID: "Mediocampistas", FWD: "Delanteros" };
 
+function sinTildes(s) { return String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase(); }
 function esc(s) { return String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
 function f1(x) { return x == null ? "–" : Number(x).toFixed(1); }
 function f2(x) { return x == null ? "–" : Number(x).toFixed(2); }
 function signo(x, d = 1) { if (x == null) return "–"; const v = Number(x).toFixed(d); return (x > 0 ? "+" : "") + v; }
 function guardarPref() { try { localStorage.setItem("fpl-pref", JSON.stringify({ vista: S.vista, jug: S.jug, cal: S.cal })); } catch (e) {} }
-function leerPref() { try { const p = JSON.parse(localStorage.getItem("fpl-pref") || "null"); if (p) { Object.assign(S.jug, p.jug || {}); Object.assign(S.cal, p.cal || {}); if (p.vista) S.vista = p.vista; } } catch (e) {} }
+function leerPref() { try { const p = JSON.parse(localStorage.getItem("fpl-pref") || "null"); if (p) { Object.assign(S.jug, p.jug || {}); delete S.jug.q; Object.assign(S.cal, p.cal || {}); if (p.vista) S.vista = p.vista; } } catch (e) {} }
 
 // ---------- datos derivados ----------
 function datos() {
@@ -310,6 +311,7 @@ function vistaResumen(D) {
         <div><div class="small muted">3 jornadas</div><div class="v ${mv.h3 >= 0 ? "pos" : "neg"}">${signo(mv.h3)}</div></div>
         <div><div class="small muted">${H} jornadas</div><div class="v pos">${signo(mv.hT)}</div></div>
         <div><div class="small muted">Riesgo vs campo</div><div class="v">${signo(mv.riesgo)}</div></div>
+        <div><div class="small muted">Banco tras el cambio</div><div class="v">£${f1(mv.banco_final / 10)}</div></div>
       </div>`;
   }
   const nombrePlan = p => p.pasos.map((s, i) => `GW${m.gws[i]}: ${s.n === 0 ? "guardar" : s.n === 1 ? "1 cambio" : "2 cambios"}`).join(" → ");
@@ -349,7 +351,7 @@ function vistaResumen(D) {
     Guardar una transferencia vale +${f1(m.modelo.umbral_ft)} pts por cada libre que te quede al final (máximo 5).</p></div>
   <div class="panel"><h2>Planes comparados</h2>
     <div class="tabla"><table><thead><tr><th>Plan</th><th>Cambios</th><th class="n">Libres al final</th><th class="n">Valor</th></tr></thead><tbody>${alternativas}</tbody></table></div>
-    <p class="small muted" style="margin:0">Valor = puntos esperados ganados en el horizonte, menos el castigo por riesgo frente al campo, más lo que valen las transferencias libres guardadas. El cambio de la segunda semana se recalcula en cada corrida con datos nuevos.</p>
+    <p class="small muted" style="margin:0">Valor = puntos esperados ganados en el horizonte, menos el castigo por riesgo frente al campo, más el valor del dinero liberado y de las transferencias libres guardadas. El cambio de la segunda semana se recalcula en cada corrida con datos nuevos.</p>
   </div>
   <div class="grid2">
     <div class="panel"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline">
@@ -384,7 +386,9 @@ function vistaFichajes(D) {
     return `<tr><td>${sale.map(s => etiquetaJ(D, s)).join("")}</td><td>${entra.map(e => etiquetaJ(D, e)).join("")}</td>
       <td class="n">${signo(t.h1)}</td><td class="n">${signo(t.h3)}</td><td class="n"><b>${signo(t.hT)}</b></td>
       <td class="n" title="Cambio en tu desviación frente al campo: negativo = más protegido">${signo(t.riesgo)}</td>
-      <td class="n">£${f1(t.banco_final / 10)}</td><td>${entra.map(e => senales(D.porId.get(e))).join("")}</td></tr>`;
+      <td class="n">£${f1(t.banco_final / 10)}</td>
+      <td class="n" title="Puntos esperados − ${f2(m.modelo.aversion_riesgo)} × riesgo + ${f2(m.modelo.valor_dinero)} pts por £1m que queda en el banco"><b>${signo(t.puntaje)}</b></td>
+      <td>${entra.map(e => senales(D.porId.get(e))).join("")}</td></tr>`;
   }).join("");
   const ids = D.pl.ids || [];
   const opcSale = ids.map(id => D.porId.get(id)).sort((a, b) => POS_ORDEN[a.p] - POS_ORDEN[b.p] || b.xpt - a.xpt)
@@ -396,9 +400,9 @@ function vistaFichajes(D) {
       <div class="seg" id="seg-fich"><button aria-pressed="${modo === "simples"}" data-modo="simples">1 cambio</button><button aria-pressed="${modo === "dobles"}" data-modo="dobles">2 cambios</button></div>
     </div>
     ${bloqueado ? `<p class="aviso">Tienes ${ft} transferencia${ft === 1 ? "" : "s"} libre${ft === 1 ? "" : "s"}: ${modo === "dobles" ? "dos cambios esta semana costarían un golpe. Sirven como referencia para la próxima jornada si guardas." : "cualquier cambio costaría un golpe."}</p>` : ""}
-    <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">Próx. GW</th><th class="n">3 GW</th><th class="n">${H} GW</th><th class="n">Riesgo</th><th class="n">Banco final</th><th>Señales de quien entra</th></tr></thead>
-    <tbody>${filas || '<tr><td colspan="8" class="muted">Sin movimientos posibles con tu presupuesto.</td></tr>'}</tbody></table></div>
-    <p class="small muted" style="margin:0">Riesgo: cuánto cambia la diferencia típica entre tus puntos y los del campo. Negativo significa que el cambio te acerca al campo (más protección); positivo, que te diferencia más.</p>
+    <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">Próx. GW</th><th class="n">3 GW</th><th class="n">${H} GW</th><th class="n">Riesgo</th><th class="n">Banco final</th><th class="n">Valor total</th><th>Señales de quien entra</th></tr></thead>
+    <tbody>${filas || '<tr><td colspan="9" class="muted">Sin movimientos posibles con tu presupuesto.</td></tr>'}</tbody></table></div>
+    <p class="small muted" style="margin:0">Riesgo: cuánto cambia la diferencia típica entre tus puntos y los del campo; negativo te acerca al campo (más protección). Valor total: puntos esperados, menos el castigo por riesgo, más ${f2(m.modelo.valor_dinero)} pts por cada £1m que el cambio deja libre (o menos, si lo gasta). El dinero cuenta porque financia mejoras futuras. Es el criterio con el que se ordena la tabla.</p>
   </div>
   <div class="panel">
     <h2>Prueba tu propio cambio</h2>
@@ -450,7 +454,8 @@ function vistaJugadores(D) {
   let L = D.jug.filter(j => j.st !== "u");
   if (F.pos !== "TODAS") L = L.filter(j => j.p === F.pos);
   if (F.max) L = L.filter(j => j.$ <= Number(F.max));
-  if (F.q) { const q = F.q.toLowerCase(); L = L.filter(j => j.n.toLowerCase().includes(q) || j.e.toLowerCase() === q); }
+  if (F.nombre) { const q = sinTildes(F.nombre); L = L.filter(j => sinTildes(j.n).includes(q)); }
+  if (F.equipo) L = L.filter(j => j.e === F.equipo);
   if (F.forma) L = L.filter(j => (j.f || []).includes("forma"));
   if (F.sinHaul) L = L.filter(j => !(j.f || []).includes("haul"));
   if (F.sinSuerte) L = L.filter(j => !(j.f || []).includes("suerte"));
@@ -481,7 +486,9 @@ function vistaJugadores(D) {
     <div class="controles">
       <div class="campo">Posición<div class="chips" id="f-pos">${["TODAS", "GKP", "DEF", "MID", "FWD"].map(chip).join("")}</div></div>
       <label class="campo" for="f-max">Precio máx. (£)<input id="f-max" type="number" step="0.1" min="3.8" max="16" value="${esc(F.max)}" style="width:90px"></label>
-      <label class="campo" for="f-q">Buscar<input id="f-q" type="search" placeholder="Nombre o equipo" value="${esc(F.q)}" style="width:150px"></label>
+      <label class="campo" for="f-nombre">Jugador<input id="f-nombre" type="search" placeholder="Nombre" value="${esc(F.nombre)}" style="width:140px"></label>
+      <label class="campo" for="f-equipo">Equipo<select id="f-equipo"><option value="">Todos</option>${[...D.cal.values()].sort((a, b) => a.nombre.localeCompare(b.nombre))
+        .map(e => `<option value="${esc(e.e)}" ${F.equipo === e.e ? "selected" : ""}>${esc(e.nombre)}</option>`).join("")}</select></label>
       <div class="campo"><label for="f-orden">Ordenar por</label><div class="orden">
         <select id="f-orden">${ordenes.map(([v, t]) => `<option value="${v}" ${F.orden === v ? "selected" : ""}>${t}</option>`).join("")}</select>
         <button id="f-dir" class="dir" aria-label="${F.asc ? "Orden ascendente; cambiar a descendente" : "Orden descendente; cambiar a ascendente"}" title="${F.asc ? "Ascendente" : "Descendente"}">${F.asc ? "↑ Menor a mayor" : "↓ Mayor a menor"}</button>
@@ -535,7 +542,16 @@ function vistaChips(D) {
     <p class="aviso">${urg}</p>
     <p class="small muted" style="margin:0">Valor esperado de cada chip en las próximas ${m.horizonte} jornadas con tu plantilla actual. La línea vertical es el umbral para recomendarlo (editable en <code>config.toml</code>). Las jornadas dobles y en blanco aparecen solas cuando FPL las programa; mientras no haya ninguna, guardar suele ser lo mejor.</p>
     ${usados ? `<div class="senales">Usados: ${usados}</div>` : ""}</div>
-    <div class="grid-chips">${det.map(tarjeta).join("")}</div>`;
+    <div class="grid-chips">${det.map(tarjeta).join("")}</div>${comboWcBb(D)}`;
+}
+function comboWcBb(D) {
+  const cb = ((D.chips || {}).chips || {}).combo_wc_bb; if (!cb) return "";
+  const filas = cb.opciones.map(o => `<tr${o.gw === cb.mejor.gw ? ' class="elegido"' : ""}><td>Wildcard GW${cb.wildcard_gw} → Bench Boost GW${o.gw}</td>
+    <td class="n">${f1(o.banca_actual)}</td><td class="n">${f1(o.banca_tras_wc)}</td><td class="n"><b>${signo(o.ventaja)}</b></td></tr>`).join("");
+  return `<div class="panel"><h2>¿Bench Boost después del Wildcard?</h2>
+    <p class="small muted" style="margin:0">Compara lo que suma tu banca actual en cada jornada con la banca que tendrías si armas el Wildcard pensando también en el Bench Boost. La banca tras el Wildcard ya descuenta los puntos que pierdes en el XI por gastar dinero en suplentes. No se pueden usar dos chips en la misma jornada.</p>
+    <div class="tabla"><table><thead><tr><th>Secuencia</th><th class="n">Banca actual</th><th class="n">Banca tras Wildcard</th><th class="n">Ventaja</th></tr></thead><tbody>${filas}</tbody></table></div>
+    <p class="small muted" style="margin:0">Mientras no haya jornadas dobles, la ventaja suele ser pequeña: el Bench Boost rinde de verdad cuando tus 15 jugadores juegan dos partidos.</p></div>`;
 }
 
 function vistaCalendario(D) {
@@ -646,7 +662,7 @@ document.addEventListener("click", e => {
 let pausa;
 document.addEventListener("input", e => {
   const id = e.target.id, v = e.target.type === "checkbox" ? e.target.checked : e.target.value;
-  const mapa = { "f-max": "max", "f-q": "q", "f-orden": "orden", "f-forma": "forma", "f-haul": "sinHaul", "f-suerte": "sinSuerte" };
+  const mapa = { "f-max": "max", "f-nombre": "nombre", "f-equipo": "equipo", "f-orden": "orden", "f-forma": "forma", "f-haul": "sinHaul", "f-suerte": "sinSuerte" };
   if (mapa[id]) { S.jug[mapa[id]] = v; S.jug.n = 60; clearTimeout(pausa);
     pausa = setTimeout(() => { const foco = document.activeElement?.id, pos = e.target.selectionStart; guardarPref(); render();
       const n = foco && document.getElementById(foco); if (n) { n.focus(); try { if (pos != null) n.setSelectionRange(pos, pos); } catch (_) {} } }, 200); return; }

@@ -126,6 +126,7 @@ class Evaluador:
         self.var = self.arr.clip(min=0) * razon[:, None]
         self.C = (self.eo[:, None] ** 2 * self.var).sum(axis=0)
         self.lam = cfg["decision"].get("aversion_riesgo", 0.0)
+        self.valor_dinero = cfg["decision"].get("valor_dinero", 0.0)
         self.index = matriz.index
 
     def evaluar(self, ids):
@@ -165,7 +166,8 @@ def buscar(ev, plantilla, banco, venta, cfg, n_cand=None, dobles=True):
         out = {"sale": sale, "entra": entra, "banco_final": int(bf),
                "h1": float(dv[:1].sum()), "h3": float(dv[:3].sum()), "hT": float(dv.sum()),
                "riesgo": float(dr.sum()), "riesgo1": float(dr[:1].sum())}
-        out["puntaje"] = out["hT"] - ev.lam * out["riesgo"]
+        out["dinero"] = ev.valor_dinero * (bf - banco) / 10.0
+        out["puntaje"] = out["hT"] - ev.lam * out["riesgo"] + out["dinero"]
         return out
 
     simples = []

@@ -26,6 +26,9 @@ margen_golpe = 1.5                 # además de los 4 puntos del golpe (solo si 
 # Protección de rank: cuánto castigar que tu equipo se separe del campo (riesgo = desviación típica
 # de tus puntos menos los del campo). 0 = solo puntos esperados. 0.25 = 1 punto de riesgo vale 0.25 pts.
 aversion_riesgo = 0.25
+# Valor del dinero que queda en el banco tras un cambio. Entre titulares, cada £1m extra compra ~0.9 pts
+# esperados en 5 jornadas; como el dinero solo rinde cuando lo gastas en otro cambio, se cuenta la mitad.
+valor_dinero = 0.45                # puntos por cada £1m liberado (y lo mismo en contra si lo gastas)
 capitania_campo = 0.6              # parte de los dueños del capitán más elegido que lo capitanea
 candidatos_por_posicion = 15       # para evaluar dobles transferencias
 

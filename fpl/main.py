@@ -241,6 +241,7 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
                    "umbral_ft": cfg["decision"]["umbral_transferencia_libre"],
                    "margen_golpe": cfg["decision"]["margen_golpe"],
                    "aversion_riesgo": cfg["decision"].get("aversion_riesgo", 0.0),
+                   "valor_dinero": cfg["decision"].get("valor_dinero", 0.0),
                    "permitir_golpes": bool(cfg["decision"].get("permitir_golpes", False))},
         "gws_pasados": gws_pas,
         "chips": [{"gw": int(c["event"]), "chip": c["name"]} for c in est["chips"]],
