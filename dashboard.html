@@ -516,7 +516,7 @@ function vistaChips(D) {
   const usados = (m.chips || []).map(c => `<span class="pill neutral">${esc({ "3xc": "Triple capitán", bboost: "Bench Boost", freehit: "Free Hit", wildcard: "Wildcard" }[c.chip] || c.chip)} · GW${c.gw}</span>`).join(" ");
   if (!det.length) return `<div class="panel"><h2>Chips</h2><p class="muted" style="margin:0">No tienes chips disponibles en este tramo de la temporada.</p>${usados ? `<div class="senales">${usados}</div>` : ""}</div>`;
   const tarjeta = c => {
-    const estado = c.usar ? `<span class="pill good">Úsalo en la GW${m.gw_siguiente}</span>` : c.supera_umbral && c.mejor_gw !== m.gw_siguiente ? `<span class="pill warn">Mejor en la GW${c.mejor_gw}</span>` : '<span class="pill neutral">Guárdalo</span>';
+    const estado = c.usar && c.valor < 1.2 * c.umbral ? `<span class="pill warn" title="Supera el umbral por poco: la estimación tiene margen de error">Al límite: considéralo en la GW${m.gw_siguiente}</span>` : c.usar ? `<span class="pill good">Úsalo en la GW${m.gw_siguiente}</span>` : c.supera_umbral && c.mejor_gw !== m.gw_siguiente ? `<span class="pill warn">Mejor en la GW${c.mejor_gw}</span>` : '<span class="pill neutral">Guárdalo</span>';
     const max = Math.max(c.umbral, ...((c.por_gw || []).map(x => x.valor)), 1);
     const barras = (c.por_gw || []).map(x => `<div class="chipbar"><span class="small muted">GW${x.gw}</span>
       <span class="pista"><span class="relleno ${x.valor >= c.umbral ? "ok" : ""}" style="width:${Math.max(2, x.valor / max * 100)}%"></span><span class="marca" style="left:${c.umbral / max * 100}%"></span></span>
