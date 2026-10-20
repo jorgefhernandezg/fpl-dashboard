@@ -63,7 +63,8 @@ def ejecutar(local=None, salida=None, ahora=None):
     evalu = transferencias.Evaluador(X, t["jugadores"], cfg, eo)
     busq = transferencias.buscar(evalu, est["plantilla"], est["banco"], est["venta"], cfg)
     planes = transferencias.planificar(X, t["jugadores"], cfg, eo, est, ft, busq)
-    rchips = chips.evaluar(X, t["jugadores"], est, gws, gw_sig, raw["boot"], cfg)
+    gan_plan = sum(p["mov"]["hT"] for p in planes[0]["pasos"] if p["mov"])
+    rchips = chips.evaluar(X, t["jugadores"], est, gws, gw_sig, raw["boot"], cfg, gan_plan)
 
     # --- registro de predicciones y validación ---
     ruta_reg = os.path.join(salida, "predicciones.csv")

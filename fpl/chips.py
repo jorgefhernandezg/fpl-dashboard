@@ -87,7 +87,7 @@ def _mejor_equipo(X, jug, gws_idx, pesos, presupuesto):
     return elegidos, float(-res.fun)
 
 
-def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg):
+def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg, ganancia_plan=0.0):
     j = jugadores.set_index("id")
     plantilla = estado["plantilla"]
     pos = [j.at[i, "pos"] for i in plantilla]
@@ -127,7 +127,10 @@ def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg):
         eq, val = _mejor_equipo(Xc, j, list(range(H)), pesos, presupuesto)
         actual = sum(pesos[k] * mejor_xi(M[:, k], pos)[2] for k in range(H))
         if eq:
-            wc = {"ganancia": round(val - actual, 2), "entran": [int(i) for i in eq if i not in plantilla],
+            bruta = val - actual
+            # Lo que el Wildcard aporta por encima de lo que ya ganarías con tus transferencias libres
+            wc = {"ganancia": round(bruta - ganancia_plan, 2), "bruta": round(bruta, 2),
+                  "plan_libres": round(ganancia_plan, 2), "entran": [int(i) for i in eq if i not in plantilla],
                   "salen": [int(i) for i in plantilla if i not in eq]}
 
     umbral = {"3xc": c.get("triple_capitan", 9.0), "bboost": c.get("bench_boost", 12.0),
@@ -139,8 +142,9 @@ def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg):
             g = wc["ganancia"] if wc else 0.0
             usar = g >= umbral[ch]
             detalle.append({"chip": ch, "nombre": NOMBRES[ch], "hasta": v["hasta"], "mejor_gw": gw_sig,
-                            "valor": g, "umbral": umbral[ch], "usar": bool(usar), "wildcard": wc,
-                            "vence_en_horizonte": v["hasta"] <= gws[-1]})
+                            "valor": g, "umbral": umbral[ch], "usar": bool(usar), "supera_umbral": bool(usar),
+                            "wildcard": wc, "vence_en_horizonte": v["hasta"] <= gws[-1],
+                            "restantes": v["hasta"] - gw_sig + 1})
             continue
         validos = [f for f in por_gw if f["gw"] <= v["hasta"] and ch in f]
         if not validos:
@@ -154,5 +158,6 @@ def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg):
                         "usar": bool(usar_ahora or (vence and mejor["gw"] == gw_sig)),
                         "supera_umbral": bool(mejor[ch] >= umbral[ch]), "vence_en_horizonte": bool(vence),
                         "por_gw": [{"gw": f["gw"], "valor": f[ch]} for f in validos],
+                        "restantes": v["hasta"] - gw_sig + 1,
                         "capitan": mejor.get("capitan") if ch == "3xc" else None})
     return {"vigentes": vig, "detalle": detalle, "por_gw": por_gw}

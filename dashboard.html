@@ -518,17 +518,21 @@ function vistaChips(D) {
       freehit: "puntos que ganarías con el mejor equipo posible solo para esa jornada", wildcard: `puntos ganados en ${m.horizonte} jornadas con la mejor plantilla posible` }[c.chip];
     let extra = "";
     if (c.chip === "wildcard" && c.wildcard) {
-      extra = `<div class="small"><b>Saldrían:</b> ${c.wildcard.salen.map(i => esc(nombreJ(D, i))).join(", ") || "—"}<br><b>Entrarían:</b> ${c.wildcard.entran.map(i => esc(nombreJ(D, i))).join(", ") || "—"}</div>`;
+      extra = `<p class="small muted" style="margin:0">Una plantilla nueva ganaría ${signo(c.wildcard.bruta)} pts frente a la tuya sin cambios; tus transferencias libres del plan ya consiguen ${signo(c.wildcard.plan_libres)}. El valor del Wildcard es la diferencia. Las plantillas optimizadas siempre parecen mejores de lo que rinden, por eso el umbral es alto.</p>
+        <div class="small"><b>Saldrían:</b> ${c.wildcard.salen.map(i => esc(nombreJ(D, i))).join(", ") || "—"}<br><b>Entrarían:</b> ${c.wildcard.entran.map(i => esc(nombreJ(D, i))).join(", ") || "—"}</div>`;
     }
     return `<div class="panel chip"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline">
       <h2>${esc(c.nombre)}</h2>${estado}</div>
-      <div class="small muted">Disponible hasta la GW${c.hasta}${c.vence_en_horizonte ? " · vence dentro de las próximas jornadas" : ""}. Mide los ${que}.</div>
+      <div class="small muted">Disponible hasta la GW${c.hasta} (quedan ${c.restantes} jornadas)${c.vence_en_horizonte ? " · vence dentro de las próximas jornadas" : ""}. Mide los ${que}.</div>
       <div class="resultado"><div><div class="small muted">${c.chip === "wildcard" ? "Ganancia" : "Mejor jornada"}</div><div class="v">${c.chip === "wildcard" ? signo(c.valor) : "GW" + c.mejor_gw}</div></div>
         <div><div class="small muted">${c.chip === "wildcard" ? "Umbral" : "Valor esperado"}</div><div class="v">${c.chip === "wildcard" ? f1(c.umbral) : f1(c.valor)}</div></div>
         ${c.chip !== "wildcard" ? `<div><div class="small muted">Umbral para usarlo</div><div class="v">${f1(c.umbral)}</div></div>` : ""}</div>
       ${barras ? `<div class="chipbars">${barras}</div>` : ""}${extra}</div>`;
   };
+  const porTramo = {}; det.forEach(c => { (porTramo[c.hasta] = porTramo[c.hasta] || []).push(c.nombre); });
+  const urg = Object.entries(porTramo).map(([h, ns]) => `Tienes ${ns.length} chip${ns.length > 1 ? "s" : ""} (${ns.join(", ")}) que vence${ns.length > 1 ? "n" : ""} en la GW${h}: quedan ${h - m.gw_siguiente + 1} jornadas para usarlo${ns.length > 1 ? "s" : ""}. Si no, se pierde${ns.length > 1 ? "n" : ""}.`).join(" ");
   return `<div class="panel"><h2>¿Cuándo usar tus chips?</h2>
+    <p class="aviso">${urg}</p>
     <p class="small muted" style="margin:0">Valor esperado de cada chip en las próximas ${m.horizonte} jornadas con tu plantilla actual. La línea vertical es el umbral para recomendarlo (editable en <code>config.toml</code>). Las jornadas dobles y en blanco aparecen solas cuando FPL las programa; mientras no haya ninguna, guardar suele ser lo mejor.</p>
     ${usados ? `<div class="senales">Usados: ${usados}</div>` : ""}</div>
     <div class="grid-chips">${det.map(tarjeta).join("")}</div>`;

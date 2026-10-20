@@ -32,7 +32,7 @@ candidatos_por_posicion = 15       # para evaluar dobles transferencias
 triple_capitan = 9.0
 bench_boost = 12.0
 free_hit = 15.0
-wildcard = 20.0      # sobre todo el horizonte
+wildcard = 20.0      # en todo el horizonte, por encima de lo que ya ganas con tus transferencias libres
 
 [puntuacion]
 # Reglas de FPL. Ajusta si cambian.
