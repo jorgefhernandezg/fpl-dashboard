@@ -1,1 +1,1 @@
-{"jornadas":[],"capitania":[]}
+{"jornadas":[{"gw":8,"n":308,"mae_modelo":2.091,"mae_fpl":2.629,"rho_modelo":0.228,"rho_fpl":0.105,"por_pos":{"DEF":{"rho_modelo":0.181,"rho_fpl":0.075},"FWD":{"rho_modelo":0.301,"rho_fpl":0.285},"GKP":{"rho_modelo":0.071,"rho_fpl":-0.081},"MID":{"rho_modelo":0.246,"rho_fpl":0.103}}}],"capitania":[{"gw":8,"capitan":411,"xp_capitan":5.53,"real_capitan":8,"sugerido":411,"xp_sugerido":5.53,"real_sugerido":8,"chip":null}]}
