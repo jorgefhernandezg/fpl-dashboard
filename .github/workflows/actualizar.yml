@@ -4,6 +4,7 @@ on:
   schedule:
     - cron: "17 10 * * *"   # 05:17 en Lima
     - cron: "17 22 * * *"   # 17:17 en Lima
+    - cron: "47 * * * *"    # cada hora: solo recalcula si el deadline está a 1¼-5 horas
   workflow_dispatch:         # botón "Run workflow" en la pestaña Actions
   push:
     branches: [main]
@@ -28,7 +29,12 @@ jobs:
           cache: pip
       - run: pip install -r requirements.txt
       - name: Calcular proyecciones
-        run: python -m fpl.main
+        run: |
+          if [ "${{ github.event.schedule }}" = "47 * * * *" ]; then
+            python -m fpl.main --solo-cerca-deadline 1.25 5
+          else
+            python -m fpl.main
+          fi
       - name: Guardar resultados
         run: |
           git config user.name "fpl-bot"

@@ -185,6 +185,7 @@ td.heat.primero { border-left: 8px solid var(--surface); }
       </div>
       <div class="small muted" id="actualizado"></div>
     </div>
+    <p class="aviso" id="aviso-datos" hidden></p>
     <div class="stats" id="stats"></div>
   </header>
 
@@ -300,6 +301,12 @@ function pintarTablero(D) {
   const gen = new Date(m.generado);
   document.getElementById("actualizado").textContent = "Datos del " + fmt.format(gen);
   const faltan = dl - Date.now();
+  const edadH = (Date.now() - gen) / 36e5, alDeadlineH = faltan / 36e5;
+  let aviso = "";
+  if (faltan > 0 && alDeadlineH < 24 && edadH > 4) aviso = `Los datos son de hace ${Math.round(edadH)} h y el deadline es en ${Math.max(0, Math.round(alDeadlineH))} h: revisa lesiones y alineaciones confirmadas antes de decidir. Se actualizan solos unos 75 minutos antes del deadline.`;
+  else if (edadH > 14) aviso = `Los datos tienen ${Math.round(edadH)} horas. La actualización automática pudo haber fallado: revisa la pestaña Actions de tu repositorio en GitHub.`;
+  const av = document.getElementById("aviso-datos");
+  if (av) { av.textContent = aviso; av.hidden = !aviso; }
   let cuenta = "cerrado";
   if (faltan > 0) { const h = Math.floor(faltan / 36e5), d = Math.floor(h / 24); cuenta = d >= 1 ? `en ${d} d ${h % 24} h` : `en ${h} h ${Math.floor(faltan / 6e4) % 60} min`; }
   const pend = (e.pendientes || []).length;

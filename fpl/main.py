@@ -357,11 +357,31 @@ def escribir(res, salida):
     print("Escrito:", {k: "%.0f KB" % (v / 1024) for k, v in tam.items()})
 
 
+def horas_al_deadline(fuente):
+    ev = pd.DataFrame(fuente.get("bootstrap-static/")["events"])
+    ev["deadline"] = pd.to_datetime(ev["deadline_time"], utc=True)
+    fut = ev[ev["deadline"] > pd.Timestamp.now(tz="UTC")].sort_values("deadline")
+    if not len(fut):
+        return None, None
+    r = fut.iloc[0]
+    return int(r["id"]), (r["deadline"] - pd.Timestamp.now(tz="UTC")).total_seconds() / 3600
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--local")
     ap.add_argument("--salida")
+    ap.add_argument("--solo-cerca-deadline", nargs=2, type=float, metavar=("DESDE_H", "HASTA_H"),
+                    help="corre solo si el próximo deadline está entre DESDE_H y HASTA_H horas")
     a = ap.parse_args()
+    if a.solo_cerca_deadline:
+        gw, h = horas_al_deadline(Fuente(local=a.local))
+        lo, hi = a.solo_cerca_deadline
+        if h is None or not (lo <= h <= hi):
+            print("Próximo deadline (GW%s) en %s h: fuera de la ventana %.1f-%.1f h, no se recalcula."
+                  % (gw, "?" if h is None else "%.1f" % h, lo, hi))
+            raise SystemExit(0)
+        print("Deadline de la GW%d en %.1f h: recalculando." % (gw, h))
     r = ejecutar(local=a.local, salida=a.salida)
     d = r["decision"]
     print("GW siguiente:", r["meta"]["gw_siguiente"], "| decisión:", d["tipo"], "| plan:", d["plan"]["total"])
