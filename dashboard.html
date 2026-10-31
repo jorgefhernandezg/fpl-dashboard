@@ -139,6 +139,19 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
 .grid-col { display: grid; gap: 20px; min-width: 0; }
 .pasos { display: grid; gap: 6px; }
 .paso { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 12px; align-items: baseline; font-size: 16px; }
+.porque { border-top: 1px solid var(--line); padding-top: 8px; }
+.porque summary { cursor: pointer; font-weight: 600; font-size: 14px; color: var(--accent); }
+.explica { display: grid; gap: 8px; padding-top: 8px; font-size: 14px; color: var(--ink); }
+.extabla td, .extabla th { padding: 4px 8px; }
+.extabla tr.total td { border-top: 1px solid var(--line); }
+.barcol { width: 34%; min-width: 120px; }
+.exbar { position: relative; display: block; height: 10px; background: var(--surface-2); border-radius: 3px; }
+.exbar span { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+.exbar .mas { background: var(--good); }
+.exbar .menos { background: var(--bad); }
+.porque-btn { border: 1px solid var(--line); background: var(--surface); border-radius: var(--r); padding: 3px 10px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+tr.porque-fila > td { background: var(--surface-2); }
+ul.ajustes { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
 .momento { display: flex; gap: 10px; align-items: baseline; font-size: 14px; }
 .paso .gw { font-family: var(--display); font-weight: 700; color: var(--accent); }
 tr.elegido td { background: var(--accent-soft); }
@@ -203,7 +216,7 @@ td.heat.primero { border-left: 8px solid var(--surface); }
 
 <script>
 const S = { docs: {}, vista: "resumen", jug: { pos: "TODAS", max: "", nombre: "", equipo: "", forma: false, sinHaul: false, sinSuerte: false, orden: "xpt", asc: false, n: 60 },
-  fich: { modo: "simples" }, cal: { modo: "ataque" }, plan: { sale: "", entra: "" } };
+  fich: { modo: "simples", abiertos: new Set() }, cal: { modo: "ataque" }, plan: { sale: "", entra: "" } };
 const VISTAS = ["resumen", "fichajes", "jugadores", "calendario", "chips", "temporada"];
 const POS_ORDEN = { GKP: 0, DEF: 1, MID: 2, FWD: 3 };
 const POS_NOMBRE = { GKP: "Portero", DEF: "Defensas", MID: "Mediocampistas", FWD: "Delanteros" };
@@ -248,6 +261,7 @@ function senales(j) {
   if (f.includes("haul")) out.push(`<span class="pill warn" title="El ${Math.round((j.conc || 0) * 100)}% de sus puntos y el ${Math.round((j.cxgi || 0) * 100)}% de su xG+xA salieron de un solo partido (GW${j.gwm}, hace ${j.hace} jornadas). La proyección no usa esos puntos.">Haul aislado</span>`);
   if (f.includes("suerte")) out.push(`<span class="pill warn" title="${j.g} goles con ${f2(j.xg)} de xG: difícil de sostener">Sobre su xG</span>`);
   if (j.pen) out.push('<span class="pill neutral" title="Primer lanzador de penales">Penales</span>');
+  if (j.aj_min != null) out.push(`<span class="pill vice" title="Minutos esperados fijados por ti en config.toml">Tus minutos: ${Math.round(j.aj_min)}</span>`);
   if (j.proy != null && j.proy >= 100) out.push(`<span class="pill neutral" title="Proyección de precio: ${j.proy}%. Sube esta noche.">£ ↑ hoy</span>`);
   else if (j.proy != null && j.proy <= -100) out.push(`<span class="pill neutral" title="Proyección de precio: ${j.proy}%. Baja esta noche.">£ ↓ hoy</span>`);
   return `<div class="senales">${estadoPill(j)}${out.join("")}</div>`;
@@ -298,6 +312,41 @@ function pintarTablero(D) {
   ].map(([k, v, s]) => `<div class="stat"><span class="k">${k}</span><span class="v">${esc(v)}${s ? ` <small>${esc(s)}</small>` : ""}</span></div>`).join("");
 }
 
+const FACTORES = [
+  ["Jugar", "puntos por aparición: dependen de los minutos esperados"],
+  ["Ataque", "goles y asistencias esperados contra un rival promedio"],
+  ["Defensa", "porterías a cero, goles en contra, contribución defensiva y atajadas"],
+  ["Bonus", "bonus esperado"],
+  ["Calendario", "lo que suman o restan los rivales y la localía frente a un rival promedio"],
+];
+function explicar(D, sale, entra, total) {
+  sale = [].concat(sale); entra = [].concat(entra);
+  const suma = (ids, k) => ids.reduce((s, i) => s + ((D.porId.get(i) || {}).c || [0, 0, 0, 0, 0])[k], 0);
+  const filas = FACTORES.map((f, k) => ({ nombre: f[0], ayuda: f[1], s: suma(sale, k), e: suma(entra, k) }));
+  filas.forEach(f => f.d = f.e - f.s);
+  const resto = total - filas.reduce((s, f) => s + f.d, 0);
+  const factores = filas.slice();
+  filas.push({ nombre: "Efecto en tu XI", ayuda: "lo que cambia en tu once ideal: a quién desplaza quien entra, la banca y el capitán", s: null, e: null, d: resto });
+  const max = Math.max(1, ...filas.map(f => Math.abs(f.d)));
+  const barra = d => `<span class="exbar"><span class="${d >= 0 ? "mas" : "menos"}" style="width:${Math.abs(d) / max * 50}%;${d >= 0 ? "left:50%" : `right:50%`}"></span></span>`;
+  const orden = factores.filter(f => Math.abs(f.d) >= 0.3).sort((a, b) => Math.abs(b.d) - Math.abs(a.d));
+  const frase = !orden.length ? "Ningún factor pesa más de 0.3 puntos: la diferencia es pequeña en todo." :
+    "Lo que más pesa: " + orden.slice(0, 2).map(f => `${f.nombre.toLowerCase()} (${signo(f.d)})`).join(" y ") + ".";
+  const nota = resto <= -1.5 ? `<p class="small" style="margin:0">Efecto en tu XI ${signo(resto)}: quien sale casi no sumaba en tu once (lesionado, sin minutos o en la banca), así que quien entra ocupa el lugar de otro titular que ya aportaba. La ganancia real es la diferencia con ese titular, no con quien sale.</p>`
+    : resto >= 1.5 ? `<p class="small" style="margin:0">Efecto en tu XI ${signo(resto)}: el cambio también mejora tu capitán o permite sacar de la alineación a alguien más débil.</p>` : "";
+  const conductor = id => { const j = D.porId.get(id); if (!j) return "";
+    const cal = (j.c || [])[4] || 0;
+    return `<b>${esc(j.n)}</b>: ${Math.round(j.xmin || 0)} min esperados${j.aj_min != null ? " (tu ajuste)" : ""}, ${f2((j.xg90 || 0) + (j.xa90 || 0))} xG+xA por 90, calendario ${signo(cal)}`; };
+  return `<div class="explica">
+    <p style="margin:0">${frase}</p>
+    <div class="tabla"><table class="extabla"><thead><tr><th>Factor</th><th class="n">Sale</th><th class="n">Entra</th><th class="n">Diferencia</th><th class="barcol"></th></tr></thead><tbody>
+    ${filas.map(f => `<tr><td title="${esc(f.ayuda)}">${f.nombre}</td><td class="n">${f.s == null ? "" : f1(f.s)}</td><td class="n">${f.e == null ? "" : f1(f.e)}</td>
+      <td class="n ${f.d >= 0 ? "pos" : "neg"}">${signo(f.d)}</td><td class="barcol">${barra(f.d)}</td></tr>`).join("")}
+    <tr class="total"><td>Total en ${D.meta.horizonte} jornadas</td><td></td><td></td><td class="n ${total >= 0 ? "pos" : "neg"}"><b>${signo(total)}</b></td><td></td></tr>
+    </tbody></table></div>
+    ${nota}<p class="small muted" style="margin:0">${sale.map(conductor).concat(entra.map(conductor)).join(" · ")}</p>
+  </div>`;
+}
 function textoMov(D, mov) {
   const sale = [].concat(mov.sale), entra = [].concat(mov.entra);
   return sale.map((s, i) => `<span class="sale">${esc(nombreJ(D, s))}</span> <span class="flecha">→</span> <span class="entra">${esc(nombreJ(D, entra[i]))}</span>`).join("<span class='muted'> · </span>");
@@ -314,6 +363,8 @@ function vistaResumen(D) {
     return `<div class="paso"><span class="gw">GW${g}</span><span>${textoMov(D, p.mov)}</span><span class="pos num">${signo(p.mov.hT)} pts</span></div>`;
   };
   let detalle = `<div class="pasos">${paso(p1, gw)}${paso({ ...p2, ft: p2.n === 0 ? (plan.ft_final) : p2.ft }, gw2)}</div>${momentoPill(dec.momento)}`;
+  if (p1.mov) detalle += `<details class="porque" open><summary>Por qué el cambio de la GW${gw}</summary>${explicar(D, p1.mov.sale, p1.mov.entra, p1.mov.hT)}</details>`;
+  if (p2.mov) detalle += `<details class="porque"><summary>Por qué el cambio de la GW${gw2}</summary>${explicar(D, p2.mov.sale, p2.mov.entra, p2.mov.hT)}</details>`;
   if (p1.mov) {
     const mv = p1.mov;
     detalle += `<div class="resultado">
@@ -371,6 +422,7 @@ function vistaResumen(D) {
       <p class="small muted" style="margin:0">Alineación con tu plantilla actual${(m.equipo.pendientes || []).length ? ", incluyendo los cambios que ya hiciste para esta jornada" : ""}. xPts = puntos esperados en la GW${gw}. C = capitán, V = vicecapitán.</p>
     </div>
     <div class="grid-col">
+      ${panelAjustes(D)}
       <div class="panel"><h2>Para revisar en tu plantilla</h2>
         ${al.length ? `<ul class="alertas">${al.join("")}</ul>` : '<p class="muted" style="margin:0">Sin lesiones, dudas ni señales de alerta en tus 15 jugadores.</p>'}
       </div>
@@ -380,6 +432,20 @@ function vistaResumen(D) {
       </div>
     </div>
   </div>`;
+}
+function panelAjustes(D) {
+  const a = D.meta.ajustes || {}; const nom = id => esc(nombreJ(D, Number(id)));
+  const mins = Object.entries(a.minutos || {});
+  const items = [];
+  if (mins.length) items.push(`<li><b>Minutos:</b> ${mins.map(([id, v]) => `${nom(id)} ${Math.round(v)}`).join(", ")}</li>`);
+  for (const [k, t] of [["comprar", "Comprar"], ["vender", "Vender"], ["no_vender", "No vender"], ["no_comprar", "No comprar"]])
+    if ((a[k] || []).length) items.push(`<li><b>${t}:</b> ${a[k].map(nom).join(", ")}</li>`);
+  const avisos = (a.avisos || []).map(x => `<li class="neg">${esc(x)}</li>`).join("");
+  const plan = (D.dec.plan || {}).total;
+  const coste = (a.comprar || []).length + (a.vender || []).length && a.plan_sin_restricciones != null && plan != null
+    ? `<p class="small" style="margin:0">Cumplir tus listas de comprar/vender cuesta <b>${f1(Math.max(0, a.plan_sin_restricciones - plan))}</b> pts frente al mejor plan sin ellas (${signo(a.plan_sin_restricciones)}).</p>` : "";
+  if (!items.length && !avisos) return `<div class="panel"><h2>Tus ajustes</h2><p class="small muted" style="margin:0">No tienes ajustes activos. En la sección <code>[ajustes]</code> de <code>config.toml</code> puedes fijar los minutos de un jugador o decir a quién comprar, vender o no tocar; la siguiente corrida los usa.</p></div>`;
+  return `<div class="panel"><h2>Tus ajustes</h2><ul class="ajustes">${items.join("")}${avisos}</ul>${coste}</div>`;
 }
 function filaXI(D, j, gw, pl, banca) {
   const marca = j.id === pl.capitan ? '<span class="pill cap">C</span> ' : j.id === pl.vice ? '<span class="pill vice">V</span> ' : "";
@@ -391,15 +457,18 @@ function vistaFichajes(D) {
   const m = D.meta, H = m.horizonte, modo = S.fich.modo, ft = m.equipo.ft, golpes = m.modelo.permitir_golpes;
   const bloqueado = !golpes && (modo === "dobles" ? ft < 2 : ft < 1);
   const lista = (modo === "simples" ? D.tr.simples : D.tr.dobles) || [];
-  const filas = lista.map(t => {
-    const sale = [].concat(t.sale), entra = [].concat(t.entra);
+  const filas = lista.map((t, i) => {
+    const sale = [].concat(t.sale), entra = [].concat(t.entra), clave = modo + ":" + sale.join(",") + ">" + entra.join(",");
+    const abierto = S.fich.abiertos.has(clave);
     return `<tr><td>${sale.map(s => etiquetaJ(D, s)).join("")}</td><td>${entra.map(e => etiquetaJ(D, e)).join("")}</td>
       <td class="n">${signo(t.h1)}</td><td class="n">${signo(t.h3)}</td><td class="n"><b>${signo(t.hT)}</b></td>
       <td class="n" title="Cambio en tu desviación frente al campo: negativo = más protegido">${signo(t.riesgo)}</td>
       <td class="n">£${f1(t.banco_final / 10)}</td>
       <td class="n" title="Puntos esperados − ${f2(m.modelo.aversion_riesgo)} × riesgo + ${f2(m.modelo.valor_dinero)} pts por £1m que queda en el banco"><b>${signo(t.puntaje)}</b></td>
       <td>${momentoPill(t.momento, true)}</td>
-      <td>${entra.map(e => senales(D.porId.get(e))).join("")}</td></tr>`;
+      <td>${entra.map(e => senales(D.porId.get(e))).join("")}</td>
+      <td><button class="porque-btn" data-clave="${esc(clave)}" aria-expanded="${abierto}">${abierto ? "Ocultar" : "Por qué"}</button></td></tr>
+      <tr class="porque-fila" ${abierto ? "" : "hidden"}><td colspan="11">${abierto ? explicar(D, t.sale, t.entra, t.hT) : ""}</td></tr>`;
   }).join("");
   const ids = D.pl.ids || [];
   const opcSale = ids.map(id => D.porId.get(id)).sort((a, b) => POS_ORDEN[a.p] - POS_ORDEN[b.p] || b.xpt - a.xpt)
@@ -411,8 +480,8 @@ function vistaFichajes(D) {
       <div class="seg" id="seg-fich"><button aria-pressed="${modo === "simples"}" data-modo="simples">1 cambio</button><button aria-pressed="${modo === "dobles"}" data-modo="dobles">2 cambios</button></div>
     </div>
     ${bloqueado ? `<p class="aviso">Tienes ${ft} transferencia${ft === 1 ? "" : "s"} libre${ft === 1 ? "" : "s"}: ${modo === "dobles" ? "dos cambios esta semana costarían un golpe. Sirven como referencia para la próxima jornada si guardas." : "cualquier cambio costaría un golpe."}</p>` : ""}
-    <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">Próx. GW</th><th class="n">3 GW</th><th class="n">${H} GW</th><th class="n">Riesgo</th><th class="n">Banco final</th><th class="n">Valor total</th><th>Cuándo</th><th>Señales de quien entra</th></tr></thead>
-    <tbody>${filas || '<tr><td colspan="10" class="muted">Sin movimientos posibles con tu presupuesto.</td></tr>'}</tbody></table></div>
+    <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">Próx. GW</th><th class="n">3 GW</th><th class="n">${H} GW</th><th class="n">Riesgo</th><th class="n">Banco final</th><th class="n">Valor total</th><th>Cuándo</th><th>Señales de quien entra</th><th></th></tr></thead>
+    <tbody>${filas || '<tr><td colspan="11" class="muted">Sin movimientos posibles con tu presupuesto.</td></tr>'}</tbody></table></div>
     <p class="small muted" style="margin:0">Riesgo: cuánto cambia la diferencia típica entre tus puntos y los del campo; negativo te acerca al campo (más protección). Valor total: puntos esperados, menos el castigo por riesgo, más ${f2(m.modelo.valor_dinero)} pts por cada £1m que el cambio deja libre (o menos, si lo gasta). El dinero cuenta porque financia mejoras futuras. Es el criterio con el que se ordena la tabla.</p>
   </div>
   <div class="panel">
@@ -451,7 +520,8 @@ function planificador(D) {
       <div><div class="small muted">${H} jornadas</div><div class="v ${acum(H) >= 0 ? "pos" : "neg"}">${signo(acum(H))}</div></div>
       <div><div class="small muted">Propiedad</div><div class="v">${f1(entra.own)}%</div></div>
     </div>
-    <p style="margin:8px 0 0">${esc(entra.n)}: ${Math.round(entra.xmin)} min esperados en la próxima GW, ${f2(entra.xg90)} xG y ${f2(entra.xa90)} xA por 90. ${senales(entra)}</p>`;
+    <p style="margin:8px 0 0">${senales(entra)}</p>
+    <details class="porque" open><summary>Por qué</summary>${explicar(D, saleId, entra.id, acum(H))}</details>`;
 }
 
 function barritas(arr, gws, mins) {
@@ -668,6 +738,7 @@ document.addEventListener("click", e => {
   if (t.closest("#seg-cal")) { S.cal.modo = t.dataset.modo; guardarPref(); render(); return; }
   if (t.closest("#f-pos")) { S.jug.pos = t.dataset.pos; S.jug.n = 60; guardarPref(); render(); return; }
   if (t.id === "f-mas") { S.jug.n += 60; render(); return; }
+  if (t.classList.contains("porque-btn")) { const k = t.dataset.clave; S.fich.abiertos.has(k) ? S.fich.abiertos.delete(k) : S.fich.abiertos.add(k); render(); return; }
   if (t.id === "f-dir") { S.jug.asc = !S.jug.asc; guardarPref(); render(); document.getElementById("f-dir")?.focus(); return; }
 });
 let pausa;

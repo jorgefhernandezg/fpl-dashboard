@@ -192,7 +192,7 @@ def partidos_futuros(t, gws):
 
 # ---------------------------------------------------------------- puntos esperados
 
-def proyectar(t, cfg, gws):
+def proyectar(t, cfg, gws, ajuste_min=None):
     j = t["jugadores"]
     pts = cfg["puntuacion"]
     mins = modelo_minutos(t, cfg)
@@ -221,6 +221,13 @@ def proyectar(t, cfg, gws):
     base["min_sup"] = base["min_sup"].fillna(18.0)
     for c in ["xg90", "xa90", "bonus90", "atajadas90", "p_dc"]:
         base[c] = base[c].fillna(base.groupby("pos")[c].transform("median")).fillna(0)
+    if ajuste_min:
+        from .ajustes import aplicar_minutos
+        base = aplicar_minutos(base, ajuste_min)
+    # Para el desglose: el mismo partido contra un rival promedio y en cancha neutral
+    fut["mult_ataque_n"] = 1.0
+    fut["lam_contra_n"] = mu * fz[:, 1]
+    fut["p_cs_n"] = np.exp(-fut["lam_contra_n"])
 
     filas = []
     for pid, b in base.iterrows():
@@ -247,9 +254,23 @@ def proyectar(t, cfg, gws):
             if pos == "GKP":
                 lam_s = b["atajadas90"] * p["mult_atajadas"]
                 c["atajadas"] = p60 * float(esperanza_piso(lam_s, pts["atajadas_por_punto"]))
+            # Versión neutral (rival promedio, sin localía): separa el efecto del calendario
+            n = {
+                "aparicion": c["aparicion"],
+                "ataque": (b["xg90"] * pts["gol"][pos] + b["xa90"] * pts["asistencia"]) * m / 90,
+                "defensa": p60 * p["p_cs_n"] * pts["porteria_cero"][pos] + c["dc"],
+                "bonus": c["bonus"],
+            }
+            if pos in ("GKP", "DEF"):
+                n["defensa"] -= p60 * float(esperanza_piso(p["lam_contra_n"], pts["goles_en_contra_por_punto"]))
+            if pos == "GKP":
+                n["defensa"] += p60 * float(esperanza_piso(b["atajadas90"], pts["atajadas_por_punto"]))
+            total = sum(c.values())
             filas.append({"id": pid, "gw": p["gw"], "rival": p["rival"], "local": p["local"],
                           "xmin": m, "p60": p60, "xg": xg, "xa": xa, "p_cs": p["p_cs"],
-                          **c, "xpts": sum(c.values())})
+                          **c, "xpts": total,
+                          "n_aparicion": n["aparicion"], "n_ataque": n["ataque"], "n_defensa": n["defensa"],
+                          "n_bonus": n["bonus"], "calendario": total - sum(n.values())})
     det = pd.DataFrame(filas)
     matriz = det.pivot_table(index="id", columns="gw", values="xpts", aggfunc="sum").reindex(
         columns=gws).fillna(0.0)

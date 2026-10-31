@@ -13,7 +13,7 @@ import tomllib
 import numpy as np
 import pandas as pd
 
-from . import chips, datos, diagnosticos, modelo, momento, predicciones, transferencias
+from . import ajustes, chips, datos, diagnosticos, modelo, momento, predicciones, transferencias
 from .api import Fuente
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -48,7 +48,8 @@ def ejecutar(local=None, salida=None, ahora=None):
     H = len(gws)
     deadline = ev.set_index("id")["deadline"][gw_sig]
 
-    proy = modelo.proyectar(t, cfg, gws)
+    aj = ajustes.cargar(cfg, t["jugadores"])
+    proy = modelo.proyectar(t, cfg, gws, aj["minutos"])
     X = proy["matriz"]
     pesos_gw = np.power(cfg["horizonte"]["descuento"], np.arange(H))
     diag = diagnosticos.diagnosticos(t, cfg)
@@ -61,8 +62,11 @@ def ejecutar(local=None, salida=None, ahora=None):
     ft = int(ft_cfg) if ft_cfg else est["ft_estimadas"]
     eo = propiedad_efectiva(t, gw_actual, cfg)
     evalu = transferencias.Evaluador(X, t["jugadores"], cfg, eo)
-    busq = transferencias.buscar(evalu, est["plantilla"], est["banco"], est["venta"], cfg)
-    planes = transferencias.planificar(X, t["jugadores"], cfg, eo, est, ft, busq)
+    busq = transferencias.buscar(evalu, est["plantilla"], est["banco"], est["venta"], cfg, aj=aj)
+    planes, plan_libre = transferencias.planificar(X, t["jugadores"], cfg, eo, est, ft, busq, aj)
+    if (aj["comprar"] or aj["vender"]) and planes and not planes[0]["cumple"]:
+        aj["avisos"].append("Ningún plan de 2 semanas cumple tus listas de comprar/vender con las transferencias "
+                            "libres y el dinero disponibles; se muestra el mejor plan sin esa condición.")
     gan_plan = sum(p["mov"]["hT"] for p in planes[0]["pasos"] if p["mov"])
     rchips = chips.evaluar(X, t["jugadores"], est, gws, gw_sig, raw["boot"], cfg, gan_plan)
 
@@ -75,7 +79,7 @@ def ejecutar(local=None, salida=None, ahora=None):
 
     # --- salida ---
     res = armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_sig, deadline,
-                       ahora, valid, auditoria, pesos_gw, eo, rchips, raw["boot"])
+                       ahora, valid, auditoria, pesos_gw, eo, rchips, raw["boot"], aj, plan_libre)
     res["meta"]["segundos"] = round(time.time() - t0, 1)
     res["meta"]["llamadas_api"] = fuente.llamadas
     escribir(res, salida)
@@ -120,7 +124,7 @@ def auditar_capitania(fuente, team_id, reg, t):
 
 
 def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_sig, deadline, ahora,
-                 valid, auditoria, pesos_gw, eo, rchips, boot):
+                 valid, auditoria, pesos_gw, eo, rchips, boot, aj, plan_libre):
     j = t["jugadores"].set_index("id")
     X = proy["matriz"]
     b = proy["base"]
@@ -131,6 +135,12 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
                                                      p_cs=("p_cs", "mean"))
     plantilla = est["plantilla"]
     gws_pas, u_pts, u_min, u_tot = diagnosticos.ultimas(t, 5)
+    w = pd.Series(pesos_gw, index=gws)
+    dd = det.assign(w=det["gw"].map(w))
+    comp = {}
+    for k_, col in (("min", "n_aparicion"), ("ata", "n_ataque"), ("def", "n_defensa"),
+                    ("bon", "n_bonus"), ("cal", "calendario")):
+        comp[k_] = (dd[col] * dd["w"]).groupby(dd["id"]).sum()
     involucrados = set(plantilla)
     for pl in planes[:6]:
         for paso in pl["pasos"]:
@@ -164,7 +174,10 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
             "pdc": r2(b.at[pid, "p_dc"]) if r["pos"] != "GKP" else None,
             "eo": r2(eo.get(pid, 0), 3),
             "proy": r2(r["proy_precio"], 0),
+            "c": [r2(comp[k_].get(pid, 0.0)) for k_ in ("min", "ata", "def", "bon", "cal")],
         }
+        if pid in aj["minutos"]:
+            rec["aj_min"] = aj["minutos"][pid]
         if pid in u_tot.index:
             ut = u_tot.loc[pid]
             rec.update({
@@ -245,6 +258,10 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
                    "valor_dinero": cfg["decision"].get("valor_dinero", 0.0),
                    "permitir_golpes": bool(cfg["decision"].get("permitir_golpes", False))},
         "gws_pasados": gws_pas,
+        "ajustes": {"minutos": {str(k): v for k, v in aj["minutos"].items()},
+                    "no_vender": aj["no_vender"], "no_comprar": aj["no_comprar"],
+                    "vender": aj["vender"], "comprar": aj["comprar"], "avisos": aj["avisos"],
+                    "plan_sin_restricciones": r2(plan_libre["total"]) if plan_libre else None},
         "chips": [{"gw": int(c["event"]), "chip": c["name"]} for c in est["chips"]],
         "historial": hist,
     }
@@ -252,7 +269,7 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
         return {"n": p["n"], "valor": r2(p["valor"]), "ft": p.get("ft"), "mov": mov(p["mov"]) if p["mov"] else None}
 
     def plan_json(pl):
-        return {"total": r2(pl["total"]), "ft_final": pl["ft_final"], "golpes": pl["golpes"],
+        return {"total": r2(pl["total"]), "ft_final": pl["ft_final"], "golpes": pl["golpes"], "cumple": pl["cumple"],
                 "pasos": [paso_json(p) for p in pl["pasos"]]}
 
     mejor = planes[0]

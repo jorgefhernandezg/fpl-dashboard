@@ -147,11 +147,16 @@ class Evaluador:
         return val * self.pesos, rie * self.pesos
 
 
-def buscar(ev, plantilla, banco, venta, cfg, n_cand=None, dobles=True):
-    """Todas las transferencias simples y las dobles entre los mejores candidatos por posición."""
+def buscar(ev, plantilla, banco, venta, cfg, n_cand=None, dobles=True, aj=None):
+    """Todas las transferencias simples y las dobles entre los mejores candidatos por posición.
+
+    aj: ajustes manuales. Nunca vende a los de `no_vender` ni compra a los de `no_comprar`;
+    los de `comprar` siempre entran en la lista de candidatos de los cambios dobles."""
+    aj = aj or {}
+    no_v, no_c = set(aj.get("no_vender", [])), set(aj.get("no_comprar", []))
     H = len(ev.pesos)
     base_v, base_r = ev.evaluar(plantilla)
-    disponibles = [e for e in ev.index if ev.status.get(e) != "u" and e not in set(plantilla)]
+    disponibles = [e for e in ev.index if ev.status.get(e) != "u" and e not in set(plantilla) and e not in no_c]
     tot = {e: float((ev.arr[ev.fila[e]] * ev.pesos).sum()) for e in disponibles}
 
     def clubes(ids):
@@ -172,6 +177,8 @@ def buscar(ev, plantilla, banco, venta, cfg, n_cand=None, dobles=True):
 
     simples = []
     for sale in plantilla:
+        if sale in no_v:
+            continue
         p = ev.pos_de[sale]
         presupuesto = banco + venta[sale]
         resto = [x for x in plantilla if x != sale]
@@ -188,8 +195,9 @@ def buscar(ev, plantilla, banco, venta, cfg, n_cand=None, dobles=True):
         top = {}
         for p in CUPO:
             cand = sorted([e for e in disponibles if ev.pos_de[e] == p], key=lambda e: -tot[e])
-            top[p] = cand[:n_cand]
-        for s1, s2 in itertools.combinations(plantilla, 2):
+            top[p] = cand[:n_cand] + [e for e in aj.get("comprar", [])
+                                      if e in tot and ev.pos_de[e] == p and e not in cand[:n_cand]]
+        for s1, s2 in itertools.combinations([x for x in plantilla if x not in no_v], 2):
             presupuesto = banco + venta[s1] + venta[s2]
             resto = [x for x in plantilla if x not in (s1, s2)]
             cr = clubes(resto)
@@ -223,17 +231,29 @@ def aplicar(plantilla, banco, venta, mov, ev):
     return nueva, banco, v
 
 
-def planificar(matriz, jugadores, cfg, eo, estado, ft, busq_ahora):
+def _ids(x):
+    return x if isinstance(x, list) else [x]
+
+
+def planificar(matriz, jugadores, cfg, eo, estado, ft, busq_ahora, aj=None):
     """Compara planes de 2 semanas usando solo transferencias libres (o con golpes, si se permiten).
 
     Valor de un plan = ganancia esta semana + ganancia la próxima (sobre la plantilla resultante)
-    + valor de las transferencias libres que quedan guardadas al final."""
+    + valor de las transferencias libres que quedan guardadas al final.
+    Si hay jugadores en `comprar` o `vender`, solo se devuelven planes que los cumplen en 2 semanas;
+    el segundo valor devuelto es el mejor plan sin esas obligaciones, para mostrar lo que cuestan."""
+    aj = aj or {}
     d = cfg["decision"]
     golpes_ok = d.get("permitir_golpes", False)
     v_ft = d["umbral_transferencia_libre"]
     ev2 = Evaluador(matriz, jugadores, cfg, eo, desde=1)
     ev1 = Evaluador(matriz, jugadores, cfg, eo, desde=0)
     plantilla, banco, venta = list(estado["plantilla"]), estado["banco"], dict(estado["venta"])
+    o_in = {e for e in aj.get("comprar", []) if e not in plantilla}
+    o_out = {e for e in aj.get("vender", []) if e in plantilla}
+
+    def toca(m, pend_in, pend_out):
+        return bool(set(_ids(m["entra"])) & pend_in or set(_ids(m["sale"])) & pend_out)
 
     def coste(n, libres):
         golpes = max(0, n - libres)
@@ -242,11 +262,24 @@ def planificar(matriz, jugadores, cfg, eo, estado, ft, busq_ahora):
     def max_mov(libres):
         return 2 if golpes_ok else min(2, libres)
 
+    def elegir(b, n, pend_in, pend_out, cuantos):
+        lista = b["simples"] if n == 1 else b["dobles"]
+        out = lista[:cuantos]
+        if pend_in or pend_out:
+            out += [m for m in lista if toca(m, pend_in, pend_out)][:3]
+        vistos, res = set(), []
+        for m in out:
+            k = (str(m["sale"]), str(m["entra"]))
+            if k not in vistos:
+                vistos.add(k)
+                res.append(m)
+        return res
+
     primeras = [(0, None)]
     if max_mov(ft) >= 1:
-        primeras += [(1, m) for m in busq_ahora["simples"][:6]]
+        primeras += [(1, m) for m in elegir(busq_ahora, 1, o_in, o_out, 6)]
     if max_mov(ft) >= 2:
-        primeras += [(2, m) for m in busq_ahora["dobles"][:4]]
+        primeras += [(2, m) for m in elegir(busq_ahora, 2, o_in, o_out, 4)]
 
     planes = []
     for n1, m1 in primeras:
@@ -256,23 +289,34 @@ def planificar(matriz, jugadores, cfg, eo, estado, ft, busq_ahora):
         else:
             p1, b1, v1 = aplicar(plantilla, banco, venta, m1, ev1)
             val1 = m1["puntaje"]
+        pend_in = {e for e in o_in if e not in p1}
+        pend_out = {e for e in o_out if e in p1}
         ft2 = min(5, max(ft - n1, 0) + 1)
-        b2 = buscar(ev2, p1, b1, v1, cfg, n_cand=10, dobles=max_mov(ft2) >= 2)
+        b2 = buscar(ev2, p1, b1, v1, cfg, n_cand=10, dobles=max_mov(ft2) >= 2, aj=aj)
         segundas = [(0, None)]
-        if max_mov(ft2) >= 1 and b2["simples"]:
-            segundas.append((1, b2["simples"][0]))
-        if max_mov(ft2) >= 2 and b2["dobles"]:
-            segundas.append((2, b2["dobles"][0]))
+        if max_mov(ft2) >= 1:
+            segundas += [(1, m) for m in elegir(b2, 1, pend_in, pend_out, 1)]
+        if max_mov(ft2) >= 2:
+            segundas += [(2, m) for m in elegir(b2, 2, pend_in, pend_out, 1)]
         for n2, m2 in segundas:
             c2, g2 = coste(n2, ft2)
             ft3 = min(5, max(ft2 - n2, 0) + 1)
             val2 = m2["puntaje"] if m2 else 0.0
             total = val1 - c1 + val2 - c2 + v_ft * (ft3 - 1)
-            planes.append({"total": float(total), "ft_final": ft3, "golpes": g1 + g2,
+            final = set(p1)
+            if m2:
+                final = (final - set(_ids(m2["sale"]))) | set(_ids(m2["entra"]))
+            cumple = o_in <= final and not (o_out & final)
+            planes.append({"total": float(total), "ft_final": ft3, "golpes": g1 + g2, "cumple": cumple,
                            "pasos": [{"n": n1, "mov": m1, "valor": float(val1 - c1)},
                                      {"n": n2, "mov": m2, "valor": float(val2 - c2), "ft": ft2}]})
     planes.sort(key=lambda p: -p["total"])
-    # quitar planes repetidos en su primer paso para mostrar alternativas distintas
+    libre = planes[0] if planes else None
+    if o_in or o_out:
+        validos = [p for p in planes if p["cumple"]]
+        if validos:
+            planes = validos
+    # quitar planes repetidos para mostrar alternativas distintas
     vistos, unicos = set(), []
     for p in planes:
         clave = (p["pasos"][0]["n"], str(p["pasos"][0]["mov"] and p["pasos"][0]["mov"]["entra"]),
@@ -280,4 +324,4 @@ def planificar(matriz, jugadores, cfg, eo, estado, ft, busq_ahora):
         if clave not in vistos:
             vistos.add(clave)
             unicos.append(p)
-    return unicos
+    return unicos, libre

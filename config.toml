@@ -32,6 +32,18 @@ valor_dinero = 0.45                # puntos por cada £1m liberado (y lo mismo e
 capitania_campo = 0.6              # parte de los dueños del capitán más elegido que lo capitanea
 candidatos_por_posicion = 15       # para evaluar dobles transferencias
 
+[ajustes]
+# Tu información manda sobre el modelo. Nombres como aparecen en FPL (sin importar tildes ni mayúsculas),
+# con el equipo si hay ambigüedad ("Gabriel ARS"), o el id numérico. Deja vacío lo que no uses.
+#
+# Minutos esperados por partido (0-90), cuando sabes algo de rotación que los datos no ven.
+#   minutos = { "Cherki" = 75, "Isak" = 60 }
+minutos = {}
+no_vender = []      # nunca se proponen como salida
+no_comprar = []     # nunca se proponen como entrada
+comprar = []        # el plan de 2 semanas debe traerlos (verás cuánto cuesta frente al plan libre)
+vender = []         # el plan de 2 semanas debe sacarlos
+
 [chips]
 # Ganancia esperada mínima para recomendar usar el chip en la próxima jornada
 triple_capitan = 9.0
