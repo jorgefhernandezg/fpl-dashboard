@@ -43,7 +43,9 @@ def validar(reg, t, picks_por_gw=None):
     pos = t["jugadores"].set_index("id")["pos"]
     for gw, d in m.groupby("gw"):
         d = d.assign(pos=d["element"].map(pos))
-        rel = d[(d["xmin"] >= 45) | (d["real"] != 0)]
+        # Solo jugadores que el modelo esperaba titulares: filtrar por el resultado (p. ej. "o que sumó puntos")
+        # sesgaría la comparación hacia arriba en los de baja proyección.
+        rel = d[d["xmin"] >= 45]
         fila = {"gw": int(gw), "n": int(len(rel)),
                 "mae_modelo": float((rel["xpts"] - rel["real"]).abs().mean()),
                 "mae_fpl": float((rel["ep_next"] - rel["real"]).abs().mean()),
