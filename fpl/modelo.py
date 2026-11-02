@@ -138,17 +138,23 @@ def tasas(t, cfg):
     g60 = g[(g["minutos"] / g["n_part"].clip(lower=1)) >= 60]
     prior_dc = (g60.groupby("pos")["dc_hits"].sum() / g60.groupby("pos")["n_part"].sum()).fillna(0)
 
-    for c in ["xg", "xa", "bonus", "atajadas", "minutos"]:
+    # Descuentos: tarjetas, autogoles y penales fallados, en puntos por 90 (con el mismo ancla por posición)
+    g["descuento"] = g["amarillas"] + 3 * g["rojas"] + 2 * g["autogoles"] + 2 * g["pen_fallados"] \
+        if "amarillas" in g.columns else 0.0
+    gd = g[g["element"].isin(reg)].groupby("pos")[["descuento", "minutos"]].sum()
+    prior_desc = (gd["descuento"] / gd["minutos"] * 90).fillna(0)
+    for c in ["xg", "xa", "bonus", "atajadas", "minutos", "descuento"]:
         g["w_" + c] = g["w"] * g[c]
     a = g.groupby("element").agg(
         pos=("pos", "first"), sx=("w_xg", "sum"), sa=("w_xa", "sum"), sb=("w_bonus", "sum"),
-        ss=("w_atajadas", "sum"), sm=("w_minutos", "sum"))
+        ss=("w_atajadas", "sum"), sm=("w_minutos", "sum"), sd=("w_descuento", "sum"))
     pr = prior.reindex(a["pos"]).set_index(a.index)
     out = pd.DataFrame(index=a.index)
     out["xg90"] = encoger(a["sx"], a["sm"], pr["xg"].fillna(0), f["k_ataque"])
     out["xa90"] = encoger(a["sa"], a["sm"], pr["xa"].fillna(0), f["k_ataque"])
     out["bonus90"] = encoger(a["sb"], a["sm"], pr["bonus"].fillna(0), f["k_bonus"])
     out["atajadas90"] = encoger(a["ss"], a["sm"], pr["atajadas"].fillna(0), f["k_atajadas"])
+    out["descuento90"] = encoger(a["sd"], a["sm"], prior_desc.reindex(a["pos"]).fillna(0).values, f.get("k_descuento", 900))
 
     g60 = g60.assign(w=pesos(g60["gw"], gw_ref, f["vida_media_jugador"]))
     d = g60.assign(wh=g60["w"] * g60["dc_hits"], wn=g60["w"] * g60["n_part"]).groupby("element")[["wh", "wn"]].sum()
@@ -219,11 +225,21 @@ def proyectar(t, cfg, gws, ajuste_min=None):
     base["p60_tit"] = base["p60_tit"].fillna(0.7)
     base["p_sup"] = base["p_sup"].fillna(0.15)
     base["min_sup"] = base["min_sup"].fillna(18.0)
-    for c in ["xg90", "xa90", "bonus90", "atajadas90", "p_dc"]:
+    if "descuento90" not in base.columns:
+        base["descuento90"] = 0.0
+    for c in ["xg90", "xa90", "bonus90", "atajadas90", "p_dc", "descuento90"]:
         base[c] = base[c].fillna(base.groupby("pos")[c].transform("median")).fillna(0)
+    # Un portero titular juega los 90: solo sale por lesión o expulsión.
+    cal = cfg.get("calibracion", {})
+    if cal.get("porteros_90", False):
+        gk = base["pos"] == "GKP"
+        base.loc[gk, "min_tit"] = 90.0
+        base.loc[gk, "p60_tit"] = base.loc[gk, "p60_tit"].clip(lower=0.97)
     if ajuste_min:
         from .ajustes import aplicar_minutos
         base = aplicar_minutos(base, ajuste_min)
+    # Las asistencias de FPL superan al xA (rebotes, penales provocados, desvíos): factor por posición.
+    f_asist = cal.get("factor_asistencias", {})
     # Para el desglose: el mismo partido contra un rival promedio y en cancha neutral
     fut["mult_ataque_n"] = 1.0
     fut["lam_contra_n"] = mu * fz[:, 1]
@@ -239,7 +255,7 @@ def proyectar(t, cfg, gws, ajuste_min=None):
             m = f * (b["p_tit"] * b["min_tit"] + (1 - b["p_tit"]) * b["p_sup"] * b["min_sup"])
             pos = b["pos"]
             xg = b["xg90"] * m / 90 * p["mult_ataque"]
-            xa = b["xa90"] * m / 90 * p["mult_ataque"]
+            xa = b["xa90"] * m / 90 * p["mult_ataque"] * f_asist.get(b["pos"], 1.0)
             c = {
                 "aparicion": p_juega + p60,
                 "goles": xg * pts["gol"][pos],
@@ -248,6 +264,7 @@ def proyectar(t, cfg, gws, ajuste_min=None):
                 "dc": (p60 * b["p_dc"] * pts["contribucion_defensiva"]) if pos != "GKP" else 0.0,
                 "bonus": b["bonus90"] * m / 90,
                 "conc": 0.0, "atajadas": 0.0,
+                "descuentos": -b["descuento90"] * m / 90 if cal.get("descontar_tarjetas", False) else 0.0,
             }
             if pos in ("GKP", "DEF"):
                 c["conc"] = -p60 * float(esperanza_piso(p["lam_contra"], pts["goles_en_contra_por_punto"]))
@@ -257,9 +274,10 @@ def proyectar(t, cfg, gws, ajuste_min=None):
             # Versión neutral (rival promedio, sin localía): separa el efecto del calendario
             n = {
                 "aparicion": c["aparicion"],
-                "ataque": (b["xg90"] * pts["gol"][pos] + b["xa90"] * pts["asistencia"]) * m / 90,
+                "ataque": (b["xg90"] * pts["gol"][pos]
+                           + b["xa90"] * f_asist.get(pos, 1.0) * pts["asistencia"]) * m / 90,
                 "defensa": p60 * p["p_cs_n"] * pts["porteria_cero"][pos] + c["dc"],
-                "bonus": c["bonus"],
+                "bonus": c["bonus"] + c["descuentos"],
             }
             if pos in ("GKP", "DEF"):
                 n["defensa"] -= p60 * float(esperanza_piso(p["lam_contra_n"], pts["goles_en_contra_por_punto"]))

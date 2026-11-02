@@ -19,6 +19,15 @@ ventana_forma = 4       # jornadas usadas para detectar jugadores en forma
 tope_xg_partido = 1.0   # lo máximo que un solo partido aporta de xG a la tasa (evita que un partido defina al jugador)
 tope_xa_partido = 0.6   # igual, para xA
 
+[calibracion]
+# Ajustes medidos con 2025-26 (30 jornadas): acercan cada componente a cómo puntúa FPL.
+# No cambian el orden de los jugadores, pero corrigen el nivel de puntos (sesgo de +0.04 a −0.05 por
+# partido; los defensas pasan de +0.19 a +0.06).
+descontar_tarjetas = true        # resta tarjetas, autogoles y penales fallados esperados de cada jugador
+porteros_90 = true               # un portero titular juega los 90
+# Las asistencias de FPL superan al xA de Opta (rebotes, penales provocados): 1.37 en promedio
+factor_asistencias = { DEF = 1.28, MID = 1.32, FWD = 1.7, GKP = 1.0 }
+
 [decision]
 permitir_golpes = false            # false = solo transferencias libres (nunca -4)
 umbral_transferencia_libre = 1.5   # ganancia mínima para gastar una libre; también lo que vale guardarla

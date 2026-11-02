@@ -90,6 +90,10 @@ def tablas(raw):
                 "atajadas": s.get("saves", 0) or 0,
                 "puntos": s.get("total_points", 0) or 0,
                 "dc_hits": pts_dc / 2.0,
+                "amarillas": s.get("yellow_cards", 0) or 0,
+                "rojas": s.get("red_cards", 0) or 0,
+                "autogoles": s.get("own_goals", 0) or 0,
+                "pen_fallados": s.get("penalties_missed", 0) or 0,
             })
     st = pd.DataFrame(filas)
 
@@ -97,7 +101,7 @@ def tablas(raw):
     malla = j[["id", "team", "pos"]].rename(columns={"id": "element"}).merge(eq_gw, on="team")
     g = malla.merge(st, on=["gw", "element"], how="left")
     cols = ["minutos", "titular", "goles", "asist", "xg", "xa", "xgc", "bonus", "bps",
-            "atajadas", "puntos", "dc_hits"]
+            "atajadas", "puntos", "dc_hits", "amarillas", "rojas", "autogoles", "pen_fallados"]
     g[cols] = g[cols].fillna(0)
     return {"jugadores": j, "equipos": equipos, "eventos": ev, "fixtures": fx,
             "jug_gw": g, "eq_gw": eq_gw}
