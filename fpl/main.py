@@ -143,7 +143,7 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
     sig = det[det["gw"] == gw_sig].groupby("id").agg(xmin=("xmin", "sum"), p60=("p60", "max"),
                                                      p_cs=("p_cs", "mean"))
     plantilla = est["plantilla"]
-    gws_pas, u_pts, u_min, u_tot = diagnosticos.ultimas(t, 5)
+    gws_pas, u_pts, u_min, u_tot, u_det = diagnosticos.ultimas(t, 5)
     w = pd.Series(pesos_gw, index=gws)
     dd = det.assign(w=det["gw"].map(w))
     comp = {}
@@ -191,6 +191,8 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
             ut = u_tot.loc[pid]
             rec.update({
                 "ult": [None if pd.isna(v) else int(v) for v in u_pts.loc[pid].values],
+                "ultd": {c: [None if pd.isna(v) else round(float(v), 2) for v in u_det[c].loc[pid].values]
+                         for c in u_det if pid in u_det[c].index},
                 "ultmin": [None if pd.isna(v) else int(v) for v in u_min.loc[pid].values],
                 "ult_tit": ni(ut["tit"]), "ult_part": ni(ut["partidos"]), "ult_min": ni(ut["min"]),
                 "ult_ga": ni(ut["goles"]) + ni(ut["asist"]), "ult_dc": ni(ut["dc"]),
@@ -232,13 +234,19 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
     eqs = t["equipos"].set_index("team")
     fz = proy["fuerza"]
     fut = proy["futuros"]
+    from .datos import xg_equipos
+    pas = xg_equipos(t)
+    pas = pas[pas["gw"].isin(gws_pas)]
     calendario = []
     for team, e in eqs.iterrows():
         f = fut[fut["team"] == team]
+        fp = pas[pas["team"] == team].sort_values("gw")
         calendario.append({
             "t": int(team), "e": e["abrev"], "nombre": e["equipo"],
             "ataque": r2(fz.at[team, "ataque"]) if team in fz.index else None,
             "defensa": r2(fz.at[team, "defensa"]) if team in fz.index else None,
+            "pasados": [[int(r["gw"]), eqs.at[r["rival"], "abrev"], bool(r["local"]), r2(r["xgf"]), r2(r["xga"])]
+                        for _, r in fp.iterrows()],
             "partidos": [[int(r["gw"]), eqs.at[r["rival"], "abrev"], bool(r["local"]),
                           r2(r["lam_favor"]), r2(r["p_cs"])] for _, r in f.iterrows()],
         })

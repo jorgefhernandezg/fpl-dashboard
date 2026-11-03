@@ -64,7 +64,9 @@ def ultimas(t, n=5):
     u["xgi"] = u["xg"] + u["xa"]
     pts = u.pivot_table(index="element", columns="gw", values="puntos", aggfunc="sum")
     mins = u.pivot_table(index="element", columns="gw", values="minutos", aggfunc="sum")
+    detalle = {c: u.pivot_table(index="element", columns="gw", values=c, aggfunc="sum").reindex(columns=gws)
+               for c in ("xg", "xa", "goles", "asist", "dc_hits", "bonus")}
     tot = u.groupby("element").agg(min=("minutos", "sum"), xgi=("xgi", "sum"), goles=("goles", "sum"),
                                    asist=("asist", "sum"), tit=("titular", "sum"), dc=("dc_hits", "sum"),
                                    partidos=("n_part", "sum"))
-    return [int(x) for x in gws], pts.reindex(columns=gws), mins.reindex(columns=gws), tot
+    return [int(x) for x in gws], pts.reindex(columns=gws), mins.reindex(columns=gws), tot, detalle
