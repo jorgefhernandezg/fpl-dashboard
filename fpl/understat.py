@@ -32,11 +32,36 @@ def _embebido(html, var):
     return json.loads(codecs.decode(m.group(1), "unicode_escape"))
 
 
-def _get(s, url, xhr=False):
-    r = s.get(url, headers=XHR if xhr else CABECERAS, timeout=30)
-    r.raise_for_status()
-    time.sleep(0.8)
-    return r
+def _get(s, url, xhr=False, intentos=3):
+    ultimo = None
+    for k in range(intentos):
+        try:
+            r = s.get(url, headers=XHR if xhr else CABECERAS, timeout=(20, 60))
+            r.raise_for_status()
+            time.sleep(0.8)
+            return r
+        except requests.RequestException as e:
+            ultimo = e
+            time.sleep(5 * (k + 1))
+    raise ultimo
+
+
+def sonda():
+    """Prueba de conectividad para distinguir un corte temporal de un bloqueo."""
+    import socket
+    out = {}
+    try:
+        out["dns"] = socket.gethostbyname("understat.com")
+    except Exception as e:
+        out["dns"] = repr(e)[:200]
+    for url in ("https://understat.com/", "http://understat.com/", "https://www.understat.com/",
+                "https://fantasy.premierleague.com/api/event-status/"):
+        try:
+            r = requests.get(url, headers=CABECERAS, timeout=(15, 30), allow_redirects=False)
+            out[url] = r.status_code
+        except Exception as e:
+            out[url] = type(e).__name__
+    return out
 
 
 def liga(s, anio, diag):
@@ -125,7 +150,7 @@ def actualizar(anio, s, diag_global):
 if __name__ == "__main__":
     anios = [int(a) for a in sys.argv[1:]] or [2026]
     s = requests.Session()
-    diag = []
+    diag = [{"sonda": sonda()}]
     for a in anios:
         try:
             actualizar(a, s, diag)
