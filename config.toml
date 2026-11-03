@@ -11,6 +11,9 @@ descuento = 0.88        # peso de cada jornada siguiente (0.88 = la 2ª vale 88%
 
 [forma]
 vida_media_jugador = 6  # jornadas: un partido de hace 6 GW pesa la mitad que el último
+# Los minutos reaccionan más rápido a cambios de rol. Medido en 2025-26: con 4, los jugadores que pasaron a ser
+# titulares quedan bien calibrados (59 min proyectados vs 58 reales; antes 56) y el resto también (72 vs 71).
+vida_media_minutos = 4
 vida_media_equipo = 10  # igual, para la fuerza de ataque/defensa de los equipos
 k_ataque = 180          # minutos de "ancla" hacia el promedio de la posición (xG, xA)
 k_bonus = 270

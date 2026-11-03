@@ -45,7 +45,8 @@ def encoger(suma_x, suma_min, prior_90, k):
 def modelo_minutos(t, cfg):
     g = t["jug_gw"].copy()
     gw_ref = g["gw"].max()
-    g["w"] = pesos(g["gw"], gw_ref, cfg["forma"]["vida_media_jugador"])
+    vm = cfg["forma"].get("vida_media_minutos") or cfg["forma"]["vida_media_jugador"]
+    g["w"] = pesos(g["gw"], gw_ref, vm)
     n = g["n_part"].clip(lower=1)
     g["tit_pp"] = (g["titular"] / n).clip(upper=1)
     g["min_pp"] = g["minutos"] / n
