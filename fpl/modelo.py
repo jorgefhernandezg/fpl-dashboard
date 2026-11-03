@@ -114,8 +114,16 @@ def disponibilidad(j, eventos, gws):
 
 # ---------------------------------------------------------------- tasas por 90
 
-def tasas(t, cfg):
+def tasas(t, cfg, dificultad=None):
     g = t["jug_gw"].copy()
+    # Ajuste por rival: un xG logrado contra una defensa fuerte vale más que contra una débil.
+    # Se divide la producción de cada partido por lo que ese rival suele permitir (y la localía),
+    # y la proyección vuelve a multiplicarla por el rival futuro.
+    if dificultad is not None:
+        d = g.set_index(["team", "gw"]).index.map(lambda k: dificultad.get(k, 1.0))
+        d = np.clip(np.asarray(d, dtype=float), 0.5, 2.0)
+        g["xg"] = g["xg"] / d
+        g["xa"] = g["xa"] / d
     # Un partido extraordinario (dos penales, un 4-0) no debe definir la tasa de todo el horizonte:
     # se recorta lo que un solo partido puede aportar de xG y de xA.
     tg, ta = cfg["forma"].get("tope_xg_partido"), cfg["forma"].get("tope_xa_partido")
@@ -202,9 +210,15 @@ def proyectar(t, cfg, gws, ajuste_min=None):
     j = t["jugadores"]
     pts = cfg["puntuacion"]
     mins = modelo_minutos(t, cfg)
-    tas = tasas(t, cfg)
     from .datos import xg_equipos
-    fuerza, mu, r = fuerza_equipos(xg_equipos(t), cfg)
+    pas = xg_equipos(t)
+    fuerza, mu, r = fuerza_equipos(pas, cfg)
+    dificultad = None
+    if cfg.get("calibracion", {}).get("ajuste_rival", False):
+        hfp = np.where(pas["local"], np.sqrt(r), 1 / np.sqrt(r))
+        pas = pas.assign(m=fuerza.reindex(pas["rival"])["defensa"].values * hfp)
+        dificultad = pas.groupby(["team", "gw"])["m"].mean().to_dict()
+    tas = tasas(t, cfg, dificultad)
     disp = disponibilidad(j, t["eventos"], gws)
     fut = partidos_futuros(t, gws)
 

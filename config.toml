@@ -27,6 +27,9 @@ descontar_tarjetas = true        # resta tarjetas, autogoles y penales fallados 
 porteros_90 = true               # un portero titular juega los 90
 # Las asistencias de FPL superan al xA de Opta (rebotes, penales provocados): 1.37 en promedio
 factor_asistencias = { DEF = 1.28, MID = 1.32, FWD = 1.7, GKP = 1.0 }
+# Normalizar el xG/xA pasado por la dificultad de cada rival. Probado en 2025-26: no mejora el orden
+# (0.278 con y sin ajuste), porque con varias jornadas los rivales se compensan. Desactivado.
+ajuste_rival = false
 
 [decision]
 permitir_golpes = false            # false = solo transferencias libres (nunca -4)
