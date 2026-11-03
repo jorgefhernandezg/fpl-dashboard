@@ -46,6 +46,11 @@ def modelo_minutos(t, cfg):
     g = t["jug_gw"].copy()
     gw_ref = g["gw"].max()
     vm = cfg["forma"].get("vida_media_minutos") or cfg["forma"]["vida_media_jugador"]
+    # Jornadas anteriores al primer partido de la temporada (fichaje tardío o lesión al inicio): no cuentan
+    # como "no fue titular", porque no reflejan una decisión del entrenador.
+    if cfg["forma"].get("ignorar_ausencias_iniciales", False):
+        primera = g[g["minutos"] > 0].groupby("element")["gw"].min()
+        g = g[g["gw"] >= g["element"].map(primera).fillna(10 ** 6)].copy()
     g["w"] = pesos(g["gw"], gw_ref, vm)
     n = g["n_part"].clip(lower=1)
     g["tit_pp"] = (g["titular"] / n).clip(upper=1)
