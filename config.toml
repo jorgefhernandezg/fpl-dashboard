@@ -18,6 +18,11 @@ k_atajadas = 270
 ventana_forma = 4       # jornadas usadas para detectar jugadores en forma
 tope_xg_partido = 1.0   # lo máximo que un solo partido aporta de xG a la tasa (evita que un partido defina al jugador)
 tope_xa_partido = 0.6   # igual, para xA
+# Si un solo partido concentra más del 40% del xG+xA reciente de un jugador, ese partido se acerca a mitad de
+# camino de su promedio en los demás. Medido en 2025-26: esos jugadores rendían el 79% de lo proyectado
+# (ahora 93%), sin cambiar al resto; mejora el orden en 7 de 9 ventanas (0.312 -> 0.317).
+suavizar_mejor_partido = 0.5
+concentracion_maxima = 0.4
 
 [calibracion]
 # Ajustes medidos con 2025-26 (30 jornadas): acercan cada componente a cómo puntúa FPL.

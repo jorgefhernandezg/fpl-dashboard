@@ -132,6 +132,30 @@ def tasas(t, cfg, dificultad=None):
         g["xg"] = g["xg"].clip(upper=tg * n)
     if ta:
         g["xa"] = g["xa"].clip(upper=ta * n)
+    # Si un solo partido concentra demasiado del xG+xA (ponderado) de un jugador, ese partido se acerca a su
+    # promedio en los demás. En 2025-26, quienes tenían más del 40% de su xG+xA en un partido rindieron el 79%
+    # de lo proyectado; el resto, el 101-104%. Solo se corrige a esos jugadores.
+    beta = cfg["forma"].get("suavizar_mejor_partido", 0.0)
+    umbral = cfg["forma"].get("concentracion_maxima", 0.4)
+    if beta:
+        ref = g["gw"].max()
+        w = pesos(g["gw"], ref, cfg["forma"]["vida_media_jugador"])
+        wxgi = w * (g["xg"] + g["xa"])
+        tot = wxgi.groupby(g["element"]).transform("sum")
+        mx = wxgi.groupby(g["element"]).transform("max")
+        concentrado = (tot > 0.3) & (mx / tot.where(tot > 0) > umbral)
+        jugados = (g["minutos"] > 0) & concentrado
+        for col in ("xg", "xa"):
+            sub = g.loc[jugados, ["element", col]]
+            if not len(sub):
+                continue
+            idx_max = sub.groupby("element")[col].idxmax()
+            suma = sub.groupby("element")[col].sum()
+            cnt = sub.groupby("element")[col].count()
+            top = sub.loc[idx_max.values].set_index("element")[col]
+            otros = ((suma - top) / (cnt - 1).where(cnt > 1)).reindex(top.index)
+            nuevo = np.where(otros.notna() & (top > otros), otros + (1 - beta) * (top - otros), top)
+            g.loc[idx_max.values, col] = nuevo
     gw_ref = g["gw"].max()
     g["w"] = pesos(g["gw"], gw_ref, cfg["forma"]["vida_media_jugador"])
     f = cfg["forma"]
