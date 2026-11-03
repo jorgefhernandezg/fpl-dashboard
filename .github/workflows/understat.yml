@@ -1,12 +1,9 @@
 name: Penales Understat
 
+# Desactivado: Understat bloquea las conexiones desde los servidores de GitHub (prueba del 3-nov-2026:
+# DNS resuelve, pero la conexión se corta en todos los puertos; FPL sí responde). Solo manual.
 on:
-  schedule:
-    - cron: "7 9 * * *"     # 04:07 en Lima, antes de la corrida principal
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths: ["fpl/understat.py", ".github/workflows/understat.yml"]
 
 permissions:
   contents: write
