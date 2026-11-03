@@ -1,0 +1,27 @@
+{
+ "diagnostico": [
+  {
+   "temporada": 2025,
+   "liga_error_pagina": "ConnectTimeout(MaxRetryError(\"HTTPSConnectionPool(host='understat.com', port=443): Max retries exceeded with url: /league/EPL/2025 (Caused by ConnectTimeoutError(<HTTPSConnection(host='understat.com', port=443) at 0x70f55c23fe00>, 'Connection to understat.com timed out. (connect timeout=30)'))\"))",
+   "liga_error_api": "ConnectTimeout(MaxRetryError(\"HTTPSConnectionPool(host='understat.com', port=443): Max retries exceeded with url: /getLeagueData/EPL/2025 (Caused by ConnectTimeoutError(<HTTPSConnection(host='understat.com', port=443) at 0x70f55bc7c110>, 'Connection to understat.com timed out. (connect timeout=30)')",
+   "partidos_temporada": 0,
+   "terminados": 0,
+   "procesados_ahora": 0,
+   "fallos": 0,
+   "situaciones_vistas": {},
+   "penales_total": 0
+  },
+  {
+   "temporada": 2026,
+   "liga_error_pagina": "ConnectTimeout(MaxRetryError(\"HTTPSConnectionPool(host='understat.com', port=443): Max retries exceeded with url: /league/EPL/2026 (Caused by ConnectTimeoutError(<HTTPSConnection(host='understat.com', port=443) at 0x70f55bc7c950>, 'Connection to understat.com timed out. (connect timeout=30)'))\"))",
+   "liga_error_api": "ConnectTimeout(MaxRetryError(\"HTTPSConnectionPool(host='understat.com', port=443): Max retries exceeded with url: /getLeagueData/EPL/2026 (Caused by ConnectTimeoutError(<HTTPSConnection(host='understat.com', port=443) at 0x70f55bc7cb60>, 'Connection to understat.com timed out. (connect timeout=30)')",
+   "partidos_temporada": 0,
+   "terminados": 0,
+   "procesados_ahora": 0,
+   "fallos": 0,
+   "situaciones_vistas": {},
+   "penales_total": 0
+  }
+ ],
+ "hora": "2026-11-03T04:43:36Z"
+}
