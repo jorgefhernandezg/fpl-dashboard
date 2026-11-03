@@ -49,7 +49,6 @@ def ejecutar(local=None, salida=None, ahora=None):
     deadline = ev.set_index("id")["deadline"][gw_sig]
 
     aj = ajustes.cargar(cfg, t["jugadores"])
-    info_pen = cargar_penales(t, cfg, gw_actual)
     proy = modelo.proyectar(t, cfg, gws, aj["minutos"])
     X = proy["matriz"]
     pesos_gw = np.power(cfg["horizonte"]["descuento"], np.arange(H))
@@ -94,22 +93,6 @@ def ejecutar(local=None, salida=None, ahora=None):
     res["meta"]["llamadas_api"] = fuente.llamadas
     escribir(res, salida)
     return res
-
-
-def cargar_penales(t, cfg, gw_actual):
-    """Datos de penales de Understat para la temporada actual (si están activados y descargados)."""
-    if not cfg.get("calibracion", {}).get("penales", False):
-        return {"activo": False}
-    from . import penales
-    ev = t["eventos"]
-    anio = int(ev["deadline"].min().year)
-    eq = t["equipos"].rename(columns={"equipo": "nombre"})
-    intentos, por_eq, rep = penales.preparar(anio, t["jugadores"], eq, t["fixtures"])
-    if intentos is None:
-        return {"activo": False, **rep}
-    t["pen_intentos"] = intentos.to_dict()
-    t["pen_tasa"] = penales.tasa_equipos(por_eq, gw_actual)
-    return {"activo": True, **rep}
 
 
 def propiedad_efectiva(t, gw_actual, cfg):
@@ -293,7 +276,6 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
                    "permitir_golpes": bool(cfg["decision"].get("permitir_golpes", False))},
         "gws_pasados": gws_pas,
         "chips_umbral_wc": cfg.get("chips", {}).get("wildcard", 10.0),
-        "penales": info_pen,
         "ajustes": {"minutos": {str(k): v for k, v in aj["minutos"].items()},
                     "no_vender": aj["no_vender"], "no_comprar": aj["no_comprar"],
                     "vender": aj["vender"], "comprar": aj["comprar"], "avisos": aj["avisos"],
