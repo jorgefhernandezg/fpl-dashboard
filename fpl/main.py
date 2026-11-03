@@ -88,7 +88,7 @@ def ejecutar(local=None, salida=None, ahora=None):
 
     # --- salida ---
     res = armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_sig, deadline,
-                       ahora, valid, auditoria, pesos_gw, eo, rchips, raw["boot"], aj, plan_libre, info_pen)
+                       ahora, valid, auditoria, pesos_gw, eo, rchips, raw["boot"], aj, plan_libre)
     res["meta"]["segundos"] = round(time.time() - t0, 1)
     res["meta"]["llamadas_api"] = fuente.llamadas
     escribir(res, salida)
@@ -133,7 +133,7 @@ def auditar_capitania(fuente, team_id, reg, t):
 
 
 def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_sig, deadline, ahora,
-                 valid, auditoria, pesos_gw, eo, rchips, boot, aj, plan_libre, info_pen=None):
+                 valid, auditoria, pesos_gw, eo, rchips, boot, aj, plan_libre):
     j = t["jugadores"].set_index("id")
     X = proy["matriz"]
     b = proy["base"]
