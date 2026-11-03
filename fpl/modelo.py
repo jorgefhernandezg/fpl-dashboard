@@ -132,6 +132,12 @@ def tasas(t, cfg, dificultad=None):
         g["xa"] = g["xa"] / d
     # Un partido extraordinario (dos penales, un 4-0) no debe definir la tasa de todo el horizonte:
     # se recorta lo que un solo partido puede aportar de xG y de xA.
+    # Penales (Understat): el xG de los penales que pateó cada jugador sale de su producción de juego;
+    # el xG de penales se proyecta aparte y se asigna al lanzador designado.
+    cal_ = cfg.get("calibracion", {})
+    if cal_.get("penales", False) and t.get("pen_intentos") is not None and len(t["pen_intentos"]):
+        it = g.set_index(["element", "gw"]).index.map(lambda k: t["pen_intentos"].get(k, 0))
+        g["xg"] = (g["xg"] - cal_.get("xg_penal", 0.79) * np.asarray(it, dtype=float)).clip(lower=0)
     tg, ta = cfg["forma"].get("tope_xg_partido"), cfg["forma"].get("tope_xa_partido")
     n = g["n_part"].clip(lower=1)
     if tg:
@@ -289,6 +295,27 @@ def proyectar(t, cfg, gws, ajuste_min=None):
     fut["lam_contra_n"] = mu * fz[:, 1]
     fut["p_cs_n"] = np.exp(-fut["lam_contra_n"])
 
+    # Penales esperados por equipo y partido, para el lanzador designado (y el segundo si el primero no está)
+    pen_on = cal.get("penales", False) and t.get("pen_tasa")
+    pen_xg = {}
+    if pen_on:
+        orden = j.set_index("id")["penalties_order"]
+        tasa_eq, tasa_liga = t["pen_tasa"]
+        def m_esp(pid, gw):
+            b = base.loc[pid]
+            f = disp.at[pid, gw] if pid in disp.index else 1.0
+            return f * (b["p_tit"] * b["min_tit"] + (1 - b["p_tit"]) * b["p_sup"] * b["min_sup"])
+        for team, grupo in base.groupby("team"):
+            o1 = [i for i in grupo.index if orden.get(i) == 1]
+            o2 = [i for i in grupo.index if orden.get(i) == 2]
+            tasa = tasa_eq.get(int(team), tasa_liga) * cal.get("xg_penal", 0.79)
+            for gw in gws:
+                s1 = min(1.0, m_esp(o1[0], gw) / 90) if o1 else 0.0
+                if o1:
+                    pen_xg[(o1[0], gw)] = tasa * s1
+                if o2:
+                    pen_xg[(o2[0], gw)] = tasa * (1 - s1) * min(1.0, m_esp(o2[0], gw) / 90)
+
     filas = []
     for pid, b in base.iterrows():
         eq = fut[fut["team"] == b["team"]]
@@ -299,6 +326,8 @@ def proyectar(t, cfg, gws, ajuste_min=None):
             m = f * (b["p_tit"] * b["min_tit"] + (1 - b["p_tit"]) * b["p_sup"] * b["min_sup"])
             pos = b["pos"]
             xg = b["xg90"] * m / 90 * p["mult_ataque"]
+            xpen = pen_xg.get((pid, p["gw"]), 0.0) if pen_on else 0.0  # por partido
+            xg += xpen
             xa = b["xa90"] * m / 90 * p["mult_ataque"] * f_asist.get(b["pos"], 1.0)
             c = {
                 "aparicion": p_juega + p60,
@@ -318,7 +347,7 @@ def proyectar(t, cfg, gws, ajuste_min=None):
             # Versión neutral (rival promedio, sin localía): separa el efecto del calendario
             n = {
                 "aparicion": c["aparicion"],
-                "ataque": (b["xg90"] * pts["gol"][pos]
+                "ataque": xpen * pts["gol"][pos] + (b["xg90"] * pts["gol"][pos]
                            + b["xa90"] * f_asist.get(pos, 1.0) * pts["asistencia"]) * m / 90,
                 "defensa": p60 * p["p_cs_n"] * pts["porteria_cero"][pos] + c["dc"],
                 "bonus": c["bonus"] + c["descuentos"],

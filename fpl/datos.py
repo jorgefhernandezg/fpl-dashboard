@@ -44,7 +44,10 @@ def tablas(raw):
     j["precio"] = j["now_cost"] / 10.0
     j["propiedad"] = j["selected_by_percent"]
     j = j.merge(equipos, on="team", how="left")
-    j = j[["id", "web_name", "team", "abrev", "pos", "precio", "now_cost", "propiedad", "status",
+    for c in ("first_name", "second_name"):
+        if c not in j.columns:
+            j[c] = ""
+    j = j[["id", "web_name", "first_name", "second_name", "team", "abrev", "pos", "precio", "now_cost", "propiedad", "status",
            "chance_of_playing_next_round", "news", "ep_next", "penalties_order",
            "direct_freekicks_order", "corners_and_indirect_freekicks_order",
            "transfers_in_event", "transfers_out_event", "proy_precio"]].copy()
