@@ -1,9 +1,17 @@
-"""Cuándo usar cada chip vigente: valor esperado en cada jornada del horizonte.
+"""Plan de chips hasta su vencimiento.
 
+Valor proyectado de cada chip:
   Triple capitán -> puntos extra del mejor capitán de tu plantilla
   Bench Boost    -> puntos de tus 4 suplentes
   Free Hit       -> mejor equipo posible para esa jornada (presupuesto = valor de venta + banco) menos tu XI
-  Wildcard       -> mejor plantilla para todo el horizonte menos la tuya actual
+  Wildcard       -> mejor plantilla para todo el horizonte menos la tuya actual, menos tu plan de transferencias
+
+Lo que se midió en 2025-26 (41 jornadas normales, 9 Wildcards) y decide las reglas:
+  - Valor real ≈ proyectado × realismo: Bench Boost 0.80 (IC90 0.69-0.90), Triple capitán 0.92,
+    Free Hit ~1.0 (muy ruidoso), Wildcard ~0.5 (IC90 −0.2 a 1.2: dirección segura, magnitud no).
+  - En jornadas normales, el valor proyectado NO distingue qué jornada es mejor para un chip
+    (correlación proyectado-real ≈ 0). El momento lo deciden razones estructurales: jornadas dobles o
+    en blanco, el Bench Boost tras el Wildcard, y bajas que justifiquen el Free Hit.
 """
 import numpy as np
 import pandas as pd
@@ -92,7 +100,7 @@ def _mejor_equipo(X, jug, gws_idx, pesos, presupuesto, bb=None):
     return elegidos, float(-res.fun)
 
 
-def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg, ganancia_plan=0.0):
+def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg, ganancia_plan=0.0, extra=None):
     j = jugadores.set_index("id")
     plantilla = estado["plantilla"]
     pos = [j.at[i, "pos"] for i in plantilla]
@@ -153,31 +161,156 @@ def evaluar(matriz, jugadores, estado, gws, gw_sig, boot, cfg, ganancia_plan=0.0
             combo = {"wildcard_gw": gw_sig, "opciones": opciones,
                      "mejor": max(opciones, key=lambda o: o["banca_tras_wc"])}
 
-    umbral = {"3xc": c.get("triple_capitan", 9.0), "bboost": c.get("bench_boost", 12.0),
-              "freehit": c.get("free_hit", 15.0), "wildcard": c.get("wildcard", 20.0)}
+    plan = planificar(vig, por_gw, wc, combo, gws, gw_sig, cfg, extra or {})
+    return {"vigentes": vig, "detalle": plan["detalle"], "por_gw": por_gw, "combo_wc_bb": combo,
+            "calendario": (extra or {}).get("calendario"), "realismo": plan["realismo"]}
+
+
+REALISMO = {"3xc": 0.92, "bboost": 0.80, "freehit": 1.0, "wildcard": 0.5}
+
+
+def calendario_hasta(fixtures, equipos, desde, hasta):
+    """Jornadas dobles y en blanco entre `desde` y `hasta`, y partidos aún sin fecha."""
+    fx = fixtures
+    fut = fx[fx["event"].between(desde, hasta)]
+    cuenta = pd.concat([fut[["event", "team_h"]].rename(columns={"team_h": "t"}),
+                        fut[["event", "team_a"]].rename(columns={"team_a": "t"})]).groupby(["event", "t"]).size()
+    abrev = equipos.set_index("team")["abrev"]
+    especiales = []
+    for gw in range(desde, hasta + 1):
+        c = cuenta[cuenta.index.get_level_values(0) == gw] if len(cuenta) else cuenta
+        por_eq = {int(t): int(v) for (_, t), v in c.items()}
+        dobles = [abrev.get(t, t) for t, v in por_eq.items() if v >= 2]
+        blancas = [abrev.get(t, t) for t in abrev.index if por_eq.get(t, 0) == 0]
+        if dobles or blancas:
+            especiales.append({"gw": gw, "dobles": dobles, "blancas": blancas})
+    sin_fecha = int(fx["event"].isna().sum())
+    return {"desde": desde, "hasta": hasta, "especiales": especiales, "sin_fecha": sin_fecha}
+
+
+def planificar(vig, por_gw, wc, combo, gws, gw_sig, cfg, extra):
+    c = cfg.get("chips", {})
+    real = dict(REALISMO, **(c.get("realismo", {}) or {}))
+    tiene = {v["chip"]: v["hasta"] for v in vig}
+    cal = extra.get("calendario") or {"especiales": []}
+    esp = {e["gw"]: e for e in cal.get("especiales", [])}
+    bajas = extra.get("bajas", [])
+    n_bajas = len(bajas)
+    lim_bajas = int(c.get("free_hit_bajas", 3))
+    umbral_wc = float(c.get("wildcard", 10.0))
+
+    # Fechas límite escalonadas: un chip por jornada. Si vencen juntos, el Free Hit va al final
+    # (es el seguro), antes el Bench Boost y antes el Wildcard (el Bench Boost va tras el Wildcard).
+    limite = {}
+    hastas = sorted(set(tiene.values()))
+    for h in hastas:
+        orden = [ch for ch in ("freehit", "bboost", "wildcard", "3xc") if tiene.get(ch) == h]
+        for i, ch in enumerate(orden):
+            limite[ch] = h - i
     detalle = []
-    for v in vig:
-        ch = v["chip"]
-        if ch == "wildcard":
-            g = wc["ganancia"] if wc else 0.0
-            usar = g >= umbral[ch]
-            detalle.append({"chip": ch, "nombre": NOMBRES[ch], "hasta": v["hasta"], "mejor_gw": gw_sig,
-                            "valor": g, "umbral": umbral[ch], "usar": bool(usar), "supera_umbral": bool(usar),
-                            "wildcard": wc, "vence_en_horizonte": v["hasta"] <= gws[-1],
-                            "restantes": v["hasta"] - gw_sig + 1})
-            continue
-        validos = [f for f in por_gw if f["gw"] <= v["hasta"] and ch in f]
-        if not validos:
-            continue
-        mejor = max(validos, key=lambda f: f[ch])
-        usar_ahora = mejor["gw"] == gw_sig and mejor[ch] >= umbral[ch]
-        # Si vence dentro del horizonte, recomendarlo en su mejor jornada aunque no llegue al umbral
-        vence = v["hasta"] <= gws[-1]
-        detalle.append({"chip": ch, "nombre": NOMBRES[ch], "hasta": v["hasta"], "mejor_gw": mejor["gw"],
-                        "valor": mejor[ch], "umbral": umbral[ch],
-                        "usar": bool(usar_ahora or (vence and mejor["gw"] == gw_sig)),
-                        "supera_umbral": bool(mejor[ch] >= umbral[ch]), "vence_en_horizonte": bool(vence),
-                        "por_gw": [{"gw": f["gw"], "valor": f[ch]} for f in validos],
-                        "restantes": v["hasta"] - gw_sig + 1,
-                        "capitan": mejor.get("capitan") if ch == "3xc" else None})
-    return {"vigentes": vig, "detalle": detalle, "por_gw": por_gw, "combo_wc_bb": combo}
+    vgw = {f["gw"]: f for f in por_gw}
+
+    def fila(ch, estado, gw_uso, razon, valor=None, por=True, **kw):
+        d = {"chip": ch, "nombre": NOMBRES[ch], "hasta": tiene[ch], "limite": limite[ch],
+             "restantes": tiene[ch] - gw_sig + 1, "estado": estado, "gw_uso": gw_uso, "razon": razon,
+             "valor": None if valor is None else round(valor, 2),
+             "realista": None if valor is None else round(valor * real[ch], 2),
+             "realismo": real[ch], "usar": estado == "usar"}
+        if por:
+            d["por_gw"] = [{"gw": f["gw"], "valor": f.get(ch)} for f in por_gw if f.get(ch) is not None]
+        d.update(kw)
+        detalle.append(d)
+
+    dobles = [g for g, e in esp.items() if e["dobles"]]
+    blancas = [g for g, e in esp.items() if e["blancas"]]
+
+    # --- Wildcard
+    if "wildcard" in tiene:
+        g = wc["ganancia"] if wc else 0.0
+        realista = g * real["wildcard"]
+        prox_esp = min([x for x in dobles + blancas if x <= tiene["wildcard"]], default=None)
+        if gw_sig >= limite["wildcard"]:
+            fila("wildcard", "usar", gw_sig, "Es tu última jornada para usarlo sin quitarle su semana al Bench "
+                 "Boost o al Free Hit.", g, por=False, wildcard=wc)
+        elif prox_esp and prox_esp - 1 == gw_sig and "bboost" in tiene and prox_esp in dobles:
+            fila("wildcard", "usar", gw_sig, "La GW%d es doble: con el Wildcard ahora armas la plantilla para "
+                 "usar el Bench Boost en ella." % prox_esp, g, por=False, wildcard=wc)
+        elif prox_esp and prox_esp in dobles and "bboost" in tiene and prox_esp - 1 > gw_sig:
+            fila("wildcard", "planificado", prox_esp - 1, "La GW%d es doble: usa el Wildcard en la GW%d para armar "
+                 "la plantilla y el Bench Boost en la doble." % (prox_esp, prox_esp - 1), g, por=False, wildcard=wc)
+        elif realista >= umbral_wc:
+            fila("wildcard", "usar", gw_sig, "La mejora realista (%.1f pts por encima de tu plan de transferencias "
+                 "libres) supera tu umbral de %.0f." % (realista, umbral_wc), g, por=False, wildcard=wc)
+        else:
+            fila("wildcard", "reservar", None, "La mejora realista (%.1f pts sobre tu plan de transferencias) no "
+                 "llega a tu umbral de %.0f. Úsalo cuando quieras hacer 4 o más cambios; a más tardar en la GW%d."
+                 % (realista, umbral_wc, limite["wildcard"]), g, por=False, wildcard=wc)
+
+    # --- Bench Boost
+    if "bboost" in tiene:
+        en_doble = [x for x in dobles if x <= tiene["bboost"]]
+        wc_ahora = any(d["chip"] == "wildcard" and d["estado"] == "usar" for d in detalle)
+        if en_doble:
+            gu = en_doble[0]
+            fila("bboost", "usar" if gu == gw_sig else "planificado", gu,
+                 "La GW%d es doble (%s): tus suplentes pueden jugar dos partidos."
+                 % (gu, ", ".join(esp[gu]["dobles"])), vgw.get(gu, {}).get("bboost"))
+        elif "wildcard" in tiene:
+            gu = gw_sig + 1 if wc_ahora else None
+            mejor = (combo or {}).get("mejor") or {}
+            txt = ("Úsalo en la jornada siguiente al Wildcard: tu banca pasaría de unos %.1f a unos %.1f puntos "
+                   "proyectados (%.1f reales)." % (mejor.get("banca_actual", 0), mejor.get("banca_tras_wc", 0),
+                                                   mejor.get("banca_tras_wc", 0) * real["bboost"])) if mejor else \
+                "Úsalo en la jornada siguiente al Wildcard, cuando tu banca sea más fuerte."
+            fila("bboost", "planificado" if wc_ahora else "reservar", gu, txt + " A más tardar en la GW%d."
+                 % limite["bboost"], mejor.get("banca_tras_wc"))
+        elif gw_sig >= limite["bboost"]:
+            fila("bboost", "usar", gw_sig, "Es tu última jornada para usarlo antes de que venza.",
+                 vgw.get(gw_sig, {}).get("bboost"))
+        else:
+            fila("bboost", "reservar", None, "Sin jornadas dobles, todas las jornadas valen parecido: la proyección "
+                 "no distingue cuál es mejor. Úsalo cuando tus 4 suplentes tengan partido y minutos; a más tardar "
+                 "en la GW%d." % limite["bboost"], vgw.get(gw_sig, {}).get("bboost"))
+
+    # --- Free Hit
+    if "freehit" in tiene:
+        en_blanca = [x for x in blancas if x <= tiene["freehit"]]
+        if n_bajas >= lim_bajas:
+            fila("freehit", "usar", gw_sig, "Tienes %d titulares que probablemente no jueguen la GW%d (%s): es el "
+                 "caso para el que conviene guardarlo." % (n_bajas, gw_sig, ", ".join(b["n"] for b in bajas)),
+                 vgw.get(gw_sig, {}).get("freehit"), bajas=bajas)
+        elif en_blanca:
+            gu = en_blanca[0]
+            fila("freehit", "usar" if gu == gw_sig else "planificado", gu,
+                 "La GW%d tiene equipos sin partido (%s)." % (gu, ", ".join(esp[gu]["blancas"])),
+                 vgw.get(gu, {}).get("freehit"), bajas=bajas)
+        elif gw_sig >= limite["freehit"]:
+            fila("freehit", "usar", gw_sig, "Es tu última jornada para usarlo antes de que venza.",
+                 vgw.get(gw_sig, {}).get("freehit"), bajas=bajas)
+        else:
+            fila("freehit", "reservar", None, "Guárdalo como seguro para una jornada con %d o más titulares sin "
+                 "jugar (hoy: %d). Si no pasa, úsalo en la GW%d." % (lim_bajas, n_bajas, limite["freehit"]),
+                 vgw.get(gw_sig, {}).get("freehit"), bajas=bajas)
+
+    # --- Triple capitán
+    if "3xc" in tiene:
+        en_doble = [x for x in dobles if x <= tiene["3xc"]]
+        if en_doble:
+            gu = en_doble[0]
+            fila("3xc", "usar" if gu == gw_sig else "planificado", gu, "La GW%d es doble: tu capitán puede jugar "
+                 "dos partidos." % gu, vgw.get(gu, {}).get("3xc"))
+        elif gw_sig >= limite["3xc"]:
+            fila("3xc", "usar", gw_sig, "Es tu última jornada para usarlo antes de que venza.",
+                 vgw.get(gw_sig, {}).get("3xc"))
+        else:
+            fila("3xc", "reservar", None, "Sin jornadas dobles, la proyección no distingue cuál jornada es mejor. "
+                 "Úsalo cuando tu mejor capitán juegue de local contra un rival débil; a más tardar en la GW%d."
+                 % limite["3xc"], vgw.get(gw_sig, {}).get("3xc"))
+    # Un solo chip por jornada: si dos quedaron para esta semana, se queda el de fecha límite más cercana
+    usar = [d for d in detalle if d["estado"] == "usar"]
+    if len(usar) > 1:
+        usar.sort(key=lambda d: (d["limite"], d["chip"] != "wildcard"))
+        for d in usar[1:]:
+            d["estado"], d["usar"] = "reservar", False
+            d["razon"] += " (Esta semana va primero el %s: solo se puede usar un chip por jornada.)" % usar[0]["nombre"]
+    return {"detalle": detalle, "realismo": real}

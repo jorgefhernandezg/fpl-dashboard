@@ -68,7 +68,16 @@ def ejecutar(local=None, salida=None, ahora=None):
         aj["avisos"].append("Ningún plan de 2 semanas cumple tus listas de comprar/vender con las transferencias "
                             "libres y el dinero disponibles; se muestra el mejor plan sin esa condición.")
     gan_plan = sum(p["mov"]["hT"] for p in planes[0]["pasos"] if p["mov"])
-    rchips = chips.evaluar(X, t["jugadores"], est, gws, gw_sig, raw["boot"], cfg, gan_plan)
+    vig = chips.vigentes(raw["boot"], est["chips"], gw_sig)
+    hasta = max([v["hasta"] for v in vig], default=gw_sig)
+    cal_chips = chips.calendario_hasta(t["fixtures"], t["equipos"], gw_sig, hasta)
+    # Titulares habituales que probablemente no jueguen la próxima jornada (lesión, sanción o sin partido)
+    det1 = proy["detalle"][proy["detalle"]["gw"] == gw_sig].groupby("id")["xmin"].sum()
+    jj = t["jugadores"].set_index("id")
+    bajas = [{"id": int(i), "n": jj.at[i, "web_name"]} for i in est["plantilla"]
+             if proy["base"].at[i, "p_tit"] >= 0.6 and det1.get(i, 0.0) < 20]
+    rchips = chips.evaluar(X, t["jugadores"], est, gws, gw_sig, raw["boot"], cfg, gan_plan,
+                           extra={"calendario": cal_chips, "bajas": bajas})
 
     # --- registro de predicciones y validación ---
     ruta_reg = os.path.join(salida, "predicciones.csv")
@@ -258,6 +267,7 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
                    "valor_dinero": cfg["decision"].get("valor_dinero", 0.0),
                    "permitir_golpes": bool(cfg["decision"].get("permitir_golpes", False))},
         "gws_pasados": gws_pas,
+        "chips_umbral_wc": cfg.get("chips", {}).get("wildcard", 10.0),
         "ajustes": {"minutos": {str(k): v for k, v in aj["minutos"].items()},
                     "no_vender": aj["no_vender"], "no_comprar": aj["no_comprar"],
                     "vender": aj["vender"], "comprar": aj["comprar"], "avisos": aj["avisos"],

@@ -167,6 +167,17 @@ td.heat.primero { border-left: 8px solid var(--surface); }
 .barras .b { width: 7px; background: var(--hi); border-radius: 2px 2px 0 0; }
 .barras .b.cero { background: var(--line); height: 2px !important; }
 .barras .b.vacia { background: transparent; border-bottom: 1px dashed var(--muted); height: 2px; }
+.tlinea { display: grid; grid-template-columns: repeat(auto-fit, minmax(58px, 1fr)); gap: 4px; }
+.tcel { border: 1px solid var(--line); border-radius: var(--r); padding: 6px; display: grid; gap: 4px; min-height: 54px; background: var(--surface); }
+.tcel.hoy { border-color: var(--accent); }
+.tcel.doble { background: var(--accent-soft); }
+.tcel.blanca { background: var(--warn-soft); }
+.tgw { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tmarks { display: flex; flex-wrap: wrap; gap: 3px; }
+.tchip, .tlim { font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 999px; }
+.tchip { background: var(--accent); color: var(--surface); }
+.tchip.planificado { background: var(--hi); }
+.tlim { border: 1px dashed var(--muted); color: var(--muted); }
 .grid-chips { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
 .chipbars { display: grid; gap: 6px; }
 .chipbar { display: grid; grid-template-columns: 44px minmax(0, 1fr) 40px; gap: 8px; align-items: center; }
@@ -600,37 +611,55 @@ function vistaJugadores(D) {
 }
 
 function vistaChips(D) {
-  const C = (D.chips || {}).chips || {}, det = C.detalle || [], m = D.meta;
-  const usados = (m.chips || []).map(c => `<span class="pill neutral">${esc({ "3xc": "Triple capitán", bboost: "Bench Boost", freehit: "Free Hit", wildcard: "Wildcard" }[c.chip] || c.chip)} · GW${c.gw}</span>`).join(" ");
+  const C = (D.chips || {}).chips || {}, det = C.detalle || [], m = D.meta, gw = m.gw_siguiente;
+  const NOM = { "3xc": "Triple capitán", bboost: "Bench Boost", freehit: "Free Hit", wildcard: "Wildcard" };
+  const CORTO = { "3xc": "TC", bboost: "BB", freehit: "FH", wildcard: "WC" };
+  const usados = (m.chips || []).map(c => `<span class="pill neutral">${esc(NOM[c.chip] || c.chip)} · GW${c.gw}</span>`).join(" ");
   if (!det.length) return `<div class="panel"><h2>Chips</h2><p class="muted" style="margin:0">No tienes chips disponibles en este tramo de la temporada.</p>${usados ? `<div class="senales">${usados}</div>` : ""}</div>`;
+  const cal = C.calendario || { especiales: [] }, hasta = Math.max(...det.map(c => c.hasta));
+  const esp = {}; (cal.especiales || []).forEach(e => esp[e.gw] = e);
+  const calTxt = (cal.especiales || []).length
+    ? (cal.especiales || []).map(e => `GW${e.gw}: ${e.dobles.length ? "doble para " + e.dobles.join(", ") : ""}${e.dobles.length && e.blancas.length ? "; " : ""}${e.blancas.length ? "sin partido " + e.blancas.join(", ") : ""}`).join(" · ")
+    : `Sin jornadas dobles ni en blanco entre la GW${gw} y la GW${hasta}: todos los equipos juegan un partido por jornada.`;
+  // línea de tiempo
+  const celdas = [];
+  for (let g = gw; g <= hasta; g++) {
+    const aqui = det.filter(c => c.gw_uso === g).map(c => `<span class="tchip ${c.estado}">${CORTO[c.chip]}</span>`).join("");
+    const lim = det.filter(c => c.limite === g && c.gw_uso == null).map(c => `<span class="tlim" title="Fecha límite del ${NOM[c.chip]}">${CORTO[c.chip]}</span>`).join("");
+    const e = esp[g], marca = e ? (e.dobles.length ? "doble" : "blanca") : "";
+    celdas.push(`<div class="tcel ${g === gw ? "hoy" : ""} ${marca}"><span class="tgw">GW${g}</span><span class="tmarks">${aqui}${lim}</span></div>`);
+  }
+  const ESTADO = c => c.estado === "usar" ? `<span class="pill good">Úsalo en la GW${gw}</span>`
+    : c.estado === "planificado" ? `<span class="pill vice">Planificado: GW${c.gw_uso}</span>`
+    : `<span class="pill neutral">Reservado · límite GW${c.limite}</span>`;
   const tarjeta = c => {
-    const estado = c.usar && c.valor < 1.2 * c.umbral ? `<span class="pill warn" title="Supera el umbral por poco: la estimación tiene margen de error">Al límite: considéralo en la GW${m.gw_siguiente}</span>` : c.usar ? `<span class="pill good">Úsalo en la GW${m.gw_siguiente}</span>` : c.supera_umbral && c.mejor_gw !== m.gw_siguiente ? `<span class="pill warn">Mejor en la GW${c.mejor_gw}</span>` : '<span class="pill neutral">Guárdalo</span>';
-    const max = Math.max(c.umbral, ...((c.por_gw || []).map(x => x.valor)), 1);
-    const barras = (c.por_gw || []).map(x => `<div class="chipbar"><span class="small muted">GW${x.gw}</span>
-      <span class="pista"><span class="relleno ${x.valor >= c.umbral ? "ok" : ""}" style="width:${Math.max(2, x.valor / max * 100)}%"></span><span class="marca" style="left:${c.umbral / max * 100}%"></span></span>
-      <span class="num small">${f1(x.valor)}</span></div>`).join("");
-    const que = { "3xc": `puntos extra de tu mejor capitán${c.capitan ? ` (${esc(nombreJ(D, c.capitan))})` : ""}`, bboost: "puntos de tus 4 suplentes",
-      freehit: "puntos que ganarías con el mejor equipo posible solo para esa jornada", wildcard: `puntos ganados en ${m.horizonte} jornadas con la mejor plantilla posible` }[c.chip];
+    const valores = c.valor == null ? "" : `<div class="resultado">
+      <div><div class="small muted">${c.chip === "wildcard" ? "Mejora proyectada" : "Valor proyectado"}</div><div class="v">${f1(c.valor)}</div></div>
+      <div><div class="small muted" title="Lo que en 2025-26 se convirtió en puntos reales: proyectado × ${f2(c.realismo)}">Valor realista</div><div class="v">${f1(c.realista)}</div></div>
+      <div><div class="small muted">Fecha límite</div><div class="v">GW${c.limite}</div></div></div>`;
     let extra = "";
     if (c.chip === "wildcard" && c.wildcard) {
-      extra = `<p class="small muted" style="margin:0">Una plantilla nueva ganaría ${signo(c.wildcard.bruta)} pts frente a la tuya sin cambios; tus transferencias libres del plan ya consiguen ${signo(c.wildcard.plan_libres)}. El valor del Wildcard es la diferencia. Las plantillas optimizadas siempre parecen mejores de lo que rinden, por eso el umbral es alto.</p>
+      extra = `<p class="small muted" style="margin:0">Una plantilla nueva ganaría ${signo(c.wildcard.bruta)} pts proyectados en ${m.horizonte} jornadas frente a la tuya sin cambios; tu plan de transferencias libres ya consigue ${signo(c.wildcard.plan_libres)}. La mejora es la diferencia. En 2025-26 solo se materializó cerca de la mitad de lo proyectado, con mucha incertidumbre, por eso se compara el valor realista con tu umbral de ${f1(m.chips_umbral_wc ?? 10)}.</p>
         <div class="small"><b>Saldrían:</b> ${c.wildcard.salen.map(i => esc(nombreJ(D, i))).join(", ") || "—"}<br><b>Entrarían:</b> ${c.wildcard.entran.map(i => esc(nombreJ(D, i))).join(", ") || "—"}</div>`;
     }
+    if (c.chip === "freehit" && (c.bajas || []).length) extra += `<p class="small" style="margin:0"><b>Titulares que probablemente no jueguen la GW${gw}:</b> ${c.bajas.map(b => esc(b.n)).join(", ")}</p>`;
+    const porgw = (c.por_gw || []).length && c.chip !== "wildcard" ? `<p class="small muted" style="margin:0">Proyección por jornada: ${c.por_gw.map(x => `GW${x.gw} ${f1(x.valor)}`).join(" · ")}. Sin jornadas dobles, estas diferencias son ruido: no indican qué jornada es mejor.</p>` : "";
     return `<div class="panel chip"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline">
-      <h2>${esc(c.nombre)}</h2>${estado}</div>
-      <div class="small muted">Disponible hasta la GW${c.hasta} (quedan ${c.restantes} jornadas)${c.vence_en_horizonte ? " · vence dentro de las próximas jornadas" : ""}. Mide los ${que}.</div>
-      <div class="resultado"><div><div class="small muted">${c.chip === "wildcard" ? "Ganancia" : "Mejor jornada"}</div><div class="v">${c.chip === "wildcard" ? signo(c.valor) : "GW" + c.mejor_gw}</div></div>
-        <div><div class="small muted">${c.chip === "wildcard" ? "Umbral" : "Valor esperado"}</div><div class="v">${c.chip === "wildcard" ? f1(c.umbral) : f1(c.valor)}</div></div>
-        ${c.chip !== "wildcard" ? `<div><div class="small muted">Umbral para usarlo</div><div class="v">${f1(c.umbral)}</div></div>` : ""}</div>
-      ${barras ? `<div class="chipbars">${barras}</div>` : ""}${extra}</div>`;
+      <h2>${esc(c.nombre)}</h2>${ESTADO(c)}</div>
+      <p style="margin:0">${esc(c.razon)}</p>${valores}${porgw}${extra}</div>`;
   };
-  const porTramo = {}; det.forEach(c => { (porTramo[c.hasta] = porTramo[c.hasta] || []).push(c.nombre); });
-  const urg = Object.entries(porTramo).map(([h, ns]) => `Tienes ${ns.length} chip${ns.length > 1 ? "s" : ""} (${ns.join(", ")}) que vence${ns.length > 1 ? "n" : ""} en la GW${h}: quedan ${h - m.gw_siguiente + 1} jornadas para usarlo${ns.length > 1 ? "s" : ""}. Si no, se pierde${ns.length > 1 ? "n" : ""}.`).join(" ");
-  return `<div class="panel"><h2>¿Cuándo usar tus chips?</h2>
-    <p class="aviso">${urg}</p>
-    <p class="small muted" style="margin:0">Valor esperado de cada chip en las próximas ${m.horizonte} jornadas con tu plantilla actual. La línea vertical es el umbral para recomendarlo (editable en <code>config.toml</code>). Las jornadas dobles y en blanco aparecen solas cuando FPL las programa; mientras no haya ninguna, guardar suele ser lo mejor.</p>
+  return `<div class="panel"><h2>Plan de chips hasta la GW${hasta}</h2>
+    <p class="aviso">Tus chips vencen en la GW${hasta}: quedan ${hasta - gw + 1} jornadas y solo se puede usar uno por jornada. Si no los usas, se pierden.</p>
+    <p class="small" style="margin:0"><b>Calendario:</b> ${esc(calTxt)}${cal.sin_fecha ? ` Hay ${cal.sin_fecha} partidos aún sin fecha: si se reprograman antes de la GW${hasta}, pueden crear una jornada doble.` : ""}</p>
+    <div class="tlinea">${celdas.join("")}</div>
+    <p class="small muted" style="margin:0">En cada jornada: chips planificados (relleno) y fechas límite de los reservados (borde). Las fechas límite están escalonadas porque solo cabe un chip por jornada.</p>
     ${usados ? `<div class="senales">Usados: ${usados}</div>` : ""}</div>
-    <div class="grid-chips">${det.map(tarjeta).join("")}</div>${comboWcBb(D)}`;
+    <div class="grid-chips">${det.map(tarjeta).join("")}</div>${comboWcBb(D)}
+    <details class="panel porque"><summary>Cómo se decide</summary><div class="explica">
+      <p style="margin:0">Medido con la temporada 2025-26 (41 jornadas normales y 9 Wildcards):</p>
+      <ul class="ajustes"><li>En jornadas normales, el valor proyectado de un chip no distingue qué jornada es mejor (correlación entre proyectado y real ≈ 0). Por eso el momento lo deciden razones estructurales: jornadas dobles o en blanco, el Bench Boost justo después del Wildcard y las bajas para el Free Hit.</li>
+      <li>Valor realista = proyectado × ${Object.entries(C.realismo || {}).map(([k, v]) => `${NOM[k]} ${f2(v)}`).join(", ")}. El del Bench Boost es firme (entre 0.69 y 0.90); el del Wildcard es muy incierto, pero siempre sale inflado.</li>
+      <li>Los umbrales del Wildcard y del Free Hit se cambian en la sección <code>[chips]</code> de <code>config.toml</code>.</li></ul></div></details>`;
 }
 function comboWcBb(D) {
   const cb = ((D.chips || {}).chips || {}).combo_wc_bb; if (!cb) return "";

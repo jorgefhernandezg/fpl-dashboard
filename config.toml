@@ -54,11 +54,12 @@ comprar = []        # el plan de 2 semanas debe traerlos (verás cuánto cuesta 
 vender = []         # el plan de 2 semanas debe sacarlos
 
 [chips]
-# Ganancia esperada mínima para recomendar usar el chip en la próxima jornada
-triple_capitan = 9.0
-bench_boost = 12.0
-free_hit = 15.0
-wildcard = 20.0      # en todo el horizonte, por encima de lo que ya ganas con tus transferencias libres
+# Medido en 2025-26: en jornadas normales la proyección NO distingue qué jornada es mejor para un chip,
+# así que el momento lo deciden jornadas dobles o en blanco, el Bench Boost tras el Wildcard y las bajas.
+# Valor real ≈ proyectado × realismo (Bench Boost 0.80; Wildcard ~0.5, con mucha incertidumbre).
+realismo = { bboost = 0.80, 3xc = 0.92, freehit = 1.0, wildcard = 0.5 }
+wildcard = 10.0      # puntos REALISTAS por encima de tu plan de transferencias libres para recomendarlo
+free_hit_bajas = 3   # titulares sin jugar la próxima jornada que justifican el Free Hit
 
 [puntuacion]
 # Reglas de FPL. Ajusta si cambian.
