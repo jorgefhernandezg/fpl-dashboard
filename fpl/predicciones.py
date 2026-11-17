@@ -7,7 +7,9 @@ import os
 import numpy as np
 import pandas as pd
 
-COLS = ["gw", "element", "xpts", "xmin", "ep_next", "precio", "propiedad", "generado"]
+# estado y chance: la bandera de FPL al congelar la predicción (a, d, i, s, u y % de jugar), para medir
+# cuánto juegan de verdad los jugadores en duda; la API no guarda ese historial.
+COLS = ["gw", "element", "xpts", "xmin", "ep_next", "precio", "propiedad", "estado", "chance", "generado"]
 
 
 def actualizar_registro(ruta, gw_sig, deadline, ahora, matriz, det, jugadores):
@@ -22,6 +24,8 @@ def actualizar_registro(ruta, gw_sig, deadline, ahora, matriz, det, jugadores):
         "ep_next": j["ep_next"].reindex(matriz.index).values,
         "precio": j["precio"].reindex(matriz.index).values,
         "propiedad": j["propiedad"].reindex(matriz.index).values,
+        "estado": j["status"].reindex(matriz.index).values,
+        "chance": j["chance_of_playing_next_round"].reindex(matriz.index).values,
         "generado": ahora.isoformat(),
     })
     nueva = nueva[(nueva["xpts"] > 0.05) | (nueva["ep_next"] > 0)]

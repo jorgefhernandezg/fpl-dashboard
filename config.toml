@@ -17,6 +17,13 @@ vida_media_minutos = 4
 # Ignorar las jornadas previas al debut de la temporada al estimar titularidad. Probado en 2025-26: empeora
 # (los que debutan tarde juegan menos de lo que sugiere su racha; orden 0.318 -> 0.312). Desactivado.
 ignorar_ausencias_iniciales = false
+# Repartir los minutos de los lesionados para que cada equipo y posición sume sus titulares habituales.
+# Medido: hoy faltan ~13% de los minutos por equipo (855 proyectados vs 983 reales en GW8-10), sobre todo por
+# lesionados cuyos minutos no pasan a nadie. Probado en 2025-26 con lesiones simuladas: cierra la brecha
+# (946 -> 985), pero no mejora los puntos (orden 0.377 -> 0.373; error 1.685 -> 1.705 en 5 de 5 ventanas),
+# porque reparte entre muchos suplentes lo que en realidad hereda uno solo. Desactivado.
+normalizar_titulares = false
+titular_maximo = 0.95
 vida_media_equipo = 10  # igual, para la fuerza de ataque/defensa de los equipos
 k_ataque = 180          # minutos de "ancla" hacia el promedio de la posición (xG, xA)
 k_bonus = 270

@@ -81,6 +81,57 @@ def modelo_minutos(t, cfg):
     return m
 
 
+
+def titulares_normalizados(t, cfg, base, disp, gws, fijos=()):
+    """Probabilidad de ser titular por jugador y jornada, ajustada para que en cada equipo y posición los
+    titulares esperados sumen lo que ese equipo suele alinear (p. ej. 4 defensas).
+
+    Sin esto los minutos de un lesionado desaparecen en vez de pasar a su reemplazo, y los equipos quedaban
+    con ~855 minutos proyectados por partido frente a ~985 reales. El faltante se reparte en proporción a
+    p·(1−p): recibe más quien está en la frontera de la titularidad, casi nada quien nunca juega o ya es fijo."""
+    fm = cfg["forma"]
+    pmax = fm.get("titular_maximo", 0.95)
+    g = t["jug_gw"]
+    vm = fm.get("vida_media_minutos") or fm["vida_media_jugador"]
+    n = g["n_part"].clip(lower=1)
+    tit = g.assign(s=(g["titular"] / n).clip(upper=1)).groupby(["team", "gw", "pos"])["s"].sum()
+    tit = tit.unstack("pos", fill_value=0).stack().rename("s").reset_index()
+    tit["w"] = pesos(tit["gw"], g["gw"].max(), vm)
+    meta = tit.groupby(["team", "pos"]).apply(lambda d: (d["s"] * d["w"]).sum() / d["w"].sum(), include_groups=False)
+    # La historia es de la plantilla actual (incluye partidos de fichajes en su club anterior): se lleva a
+    # 1 portero y 10 de campo, respetando la formación habitual del equipo.
+    meta = meta.unstack("pos").fillna(0)
+    if "GKP" in meta.columns:
+        meta["GKP"] = 1.0
+    campo = [c for c in meta.columns if c != "GKP"]
+    meta[campo] = meta[campo].mul(10.0 / meta[campo].sum(axis=1).replace(0, np.nan), axis=0)
+    meta = meta.stack()
+    out = {}
+    for (team, pos), grupo in base.groupby(["team", "pos"]):
+        objetivo = float(meta.get((team, pos), np.nan))
+        ids = list(grupo.index)
+        p0 = grupo["p_tit"].clip(0, 1).values
+        for gw in gws:
+            f = np.array([disp.at[i, gw] if i in disp.index else 1.0 for i in ids])
+            p = p0.copy()
+            libre = np.array([(i not in fijos) and fi > 0 for i, fi in zip(ids, f)])
+            if not np.isnan(objetivo) and libre.any():
+                for _ in range(6):
+                    dif = objetivo - (f * p).sum()
+                    if abs(dif) < 1e-3:
+                        break
+                    peso = f * p * (1 - p) * libre + 1e-6 * libre
+                    if dif > 0:
+                        peso = peso * (p < pmax)
+                    if peso.sum() <= 0:
+                        break
+                    p = np.clip(p + dif * peso / (f * peso).sum().clip(min=1e-9) * (f > 0), 0, pmax if dif > 0 else 1)
+                    p = np.where(libre, np.minimum(p, np.maximum(p0, pmax)), p0)
+            for i, v in zip(ids, p):
+                out[(i, gw)] = float(v)
+    return out
+
+
 def disponibilidad(j, eventos, gws):
     """Factor 0-1 de disponibilidad por jugador y jornada futura, a partir de status, chance y news."""
     dl = eventos.set_index("id")["deadline"]
@@ -289,14 +340,19 @@ def proyectar(t, cfg, gws, ajuste_min=None):
     fut["lam_contra_n"] = mu * fz[:, 1]
     fut["p_cs_n"] = np.exp(-fut["lam_contra_n"])
 
+    ptit = None
+    if cfg["forma"].get("normalizar_titulares", False):
+        ptit = titulares_normalizados(t, cfg, base, disp, gws, fijos=set((ajuste_min or {}).keys()))
+
     filas = []
     for pid, b in base.iterrows():
         eq = fut[fut["team"] == b["team"]]
         for _, p in eq.iterrows():
             f = disp.at[pid, p["gw"]] if pid in disp.index else 1.0
-            p_juega = f * (b["p_tit"] + (1 - b["p_tit"]) * b["p_sup"])
-            p60 = f * b["p_tit"] * b["p60_tit"]
-            m = f * (b["p_tit"] * b["min_tit"] + (1 - b["p_tit"]) * b["p_sup"] * b["min_sup"])
+            pt = ptit.get((pid, p["gw"]), b["p_tit"]) if ptit is not None else b["p_tit"]
+            p_juega = f * (pt + (1 - pt) * b["p_sup"])
+            p60 = f * pt * b["p60_tit"]
+            m = f * (pt * b["min_tit"] + (1 - pt) * b["p_sup"] * b["min_sup"])
             pos = b["pos"]
             xg = b["xg90"] * m / 90 * p["mult_ataque"]
             xa = b["xa90"] * m / 90 * p["mult_ataque"] * f_asist.get(b["pos"], 1.0)
