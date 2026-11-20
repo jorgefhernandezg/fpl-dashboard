@@ -285,6 +285,11 @@ function momentoPill(mo, corto) {
   const det = esc(mo.texto + (mo.otros && mo.otros.length ? " " + mo.otros.join("; ") + "." : ""));
   return corto ? `<span class="pill ${cls}" title="${det}">${et}</span>` : `<div class="momento"><span class="pill ${cls}">${et}</span><span>${det}</span></div>`;
 }
+function textoDinero(m) {
+  const mo = m.modelo || {};
+  if (mo.modo_dinero === "lineal") return `${f2(mo.valor_dinero)} pts por cada £1m que el cambio deja libre (o menos, si lo gasta)`;
+  return `el valor del dinero que deja libre: el ${Math.round((mo.factor_opcion_dinero ?? 0.5) * 100)}% de la ganancia del mejor cambio que ese dinero permitiría y que sin él no alcanza (0 si con más banco no hay un cambio mejor)`;
+}
 function heat(v, max) { const a = Math.max(0.05, Math.min(0.9, (v || 0) / max)); const oscuro = a > 0.55;
   return `style="background: rgba(var(--heat), ${a.toFixed(2)}); color: ${oscuro ? "#fff" : "var(--ink)"}"`; }
 
@@ -430,7 +435,7 @@ function vistaResumen(D) {
     Guardar una transferencia vale +${f1(m.modelo.umbral_ft)} pts por cada libre que te quede al final (máximo 5).</p></div>
   <div class="panel"><h2>Planes comparados</h2>
     <div class="tabla"><table><thead><tr><th>Plan</th><th>Cambios</th><th class="n">Libres al final</th><th class="n">Valor</th></tr></thead><tbody>${alternativas}</tbody></table></div>
-    <p class="small muted" style="margin:0">Valor = puntos esperados ganados en el horizonte, menos el castigo por riesgo frente al campo, más el valor del dinero liberado y de las transferencias libres guardadas. El cambio de la segunda semana se recalcula en cada corrida con datos nuevos.</p>
+    <p class="small muted" style="margin:0">Valor = puntos esperados ganados en el horizonte, menos el castigo por riesgo frente al campo, más el valor del dinero liberado (solo si permite un cambio mejor) y de las transferencias libres guardadas. El cambio de la segunda semana se recalcula en cada corrida con datos nuevos.</p>
   </div>
   <div class="grid2">
     <div class="panel"><div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;align-items:baseline">
@@ -482,7 +487,7 @@ function vistaFichajes(D) {
       <td class="n">${signo(t.h1)}</td><td class="n">${signo(t.h3)}</td><td class="n"><b>${signo(t.hT)}</b></td>
       <td class="n" title="Cambio en tu desviación frente al campo: negativo = más protegido">${signo(t.riesgo)}</td>
       <td class="n">£${f1(t.banco_final / 10)}</td>
-      <td class="n" title="Puntos esperados − ${f2(m.modelo.aversion_riesgo)} × riesgo + ${f2(m.modelo.valor_dinero)} pts por £1m que queda en el banco"><b>${signo(t.puntaje)}</b></td>
+      <td class="n" title="Puntos esperados − ${f2(m.modelo.aversion_riesgo)} × riesgo + ${esc(textoDinero(m))}"><b>${signo(t.puntaje)}</b></td>
       <td>${momentoPill(t.momento, true)}</td>
       <td>${entra.map(e => senales(D.porId.get(e))).join("")}</td>
       <td><button class="porque-btn" data-clave="${esc(clave)}" aria-expanded="${abierto}">${abierto ? "Ocultar" : "Por qué"}</button></td></tr>
@@ -500,7 +505,7 @@ function vistaFichajes(D) {
     ${bloqueado ? `<p class="aviso">Tienes ${ft} transferencia${ft === 1 ? "" : "s"} libre${ft === 1 ? "" : "s"}: ${modo === "dobles" ? "dos cambios esta semana costarían un golpe. Sirven como referencia para la próxima jornada si guardas." : "cualquier cambio costaría un golpe."}</p>` : ""}
     <div class="tabla"><table><thead><tr><th>Sale</th><th>Entra</th><th class="n">Próx. GW</th><th class="n">3 GW</th><th class="n">${H} GW</th><th class="n">Riesgo</th><th class="n">Banco final</th><th class="n">Valor total</th><th>Cuándo</th><th>Señales de quien entra</th><th></th></tr></thead>
     <tbody>${filas || '<tr><td colspan="11" class="muted">Sin movimientos posibles con tu presupuesto.</td></tr>'}</tbody></table></div>
-    <p class="small muted" style="margin:0">Riesgo: cuánto cambia la diferencia típica entre tus puntos y los del campo; negativo te acerca al campo (más protección). Valor total: puntos esperados, menos el castigo por riesgo, más ${f2(m.modelo.valor_dinero)} pts por cada £1m que el cambio deja libre (o menos, si lo gasta). El dinero cuenta porque financia mejoras futuras. Es el criterio con el que se ordena la tabla.</p>
+    <p class="small muted" style="margin:0">Riesgo: cuánto cambia la diferencia típica entre tus puntos y los del campo; negativo te acerca al campo (más protección). Valor total: puntos esperados, menos el castigo por riesgo, más ${textoDinero(m)}. Es el criterio con el que se ordena la tabla.</p>
   </div>
   <div class="panel">
     <h2>Prueba tu propio cambio</h2>

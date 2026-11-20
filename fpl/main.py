@@ -273,6 +273,8 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
                    "margen_golpe": cfg["decision"]["margen_golpe"],
                    "aversion_riesgo": cfg["decision"].get("aversion_riesgo", 0.0),
                    "valor_dinero": cfg["decision"].get("valor_dinero", 0.0),
+                   "modo_dinero": cfg["decision"].get("modo_dinero", "opcion"),
+                   "factor_opcion_dinero": cfg["decision"].get("factor_opcion_dinero", 0.5),
                    "permitir_golpes": bool(cfg["decision"].get("permitir_golpes", False))},
         "gws_pasados": gws_pas,
         "chips_umbral_wc": cfg.get("chips", {}).get("wildcard", 10.0),

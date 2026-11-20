@@ -165,13 +165,56 @@ def buscar(ev, plantilla, banco, venta, cfg, n_cand=None, dobles=True, aj=None):
             c[ev.club[i]] = c.get(ev.club[i], 0) + 1
         return c
 
-    def registro(nueva, sale, entra, bf):
+    def neto(nueva):
         v, r = ev.evaluar(nueva)
         dv, dr = v - base_v, r - base_r
+        return dv, dr, float(dv.sum() - ev.lam * dr.sum())
+
+    # Valor del dinero como opción: lo que vale tener más banco es el mejor cambio que ese dinero permite
+    # y que sin él no alcanza. Se calcula una vez, con los mejores candidatos de cada posición, y se cuenta
+    # una fracción porque usarlo exige otra transferencia más adelante.
+    d_cfg = cfg["decision"]
+    modo = d_cfg.get("modo_dinero", "opcion")
+    f_op = d_cfg.get("factor_opcion_dinero", 0.5)
+    opciones = []
+    if modo == "opcion":
+        k_op = d_cfg.get("candidatos_opcion_dinero", 25)
+        top_op = {p: sorted([e for e in disponibles if ev.pos_de[e] == p], key=lambda e: -tot[e])[:k_op]
+                  for p in CUPO}
+        for s_ in plantilla:
+            if s_ in no_v:
+                continue
+            resto = [x for x in plantilla if x != s_]
+            cr = clubes(resto)
+            for e_ in top_op[ev.pos_de[s_]]:
+                if cr.get(ev.club[e_], 0) >= 3:
+                    continue
+                g = neto(resto + [e_])[2]
+                if g > 0:
+                    opciones.append((ev.precio[e_] - venta[s_], g, s_, e_))
+        opciones.sort()
+
+    def opcion(b, fuera_s, fuera_e):
+        mejor = 0.0
+        for nec, g, s_, e_ in opciones:
+            if nec > b:
+                break
+            if g > mejor and s_ not in fuera_s and e_ not in fuera_e:
+                mejor = g
+        return mejor
+
+    def valor_dinero(bf, sale, entra):
+        if modo != "opcion":
+            return ev.valor_dinero * (bf - banco) / 10.0
+        fs, fe = set(_ids(sale)), set(_ids(entra))
+        return f_op * (opcion(bf, fs, fe) - opcion(banco, fs, fe))
+
+    def registro(nueva, sale, entra, bf):
+        dv, dr, _ = neto(nueva)
         out = {"sale": sale, "entra": entra, "banco_final": int(bf),
                "h1": float(dv[:1].sum()), "h3": float(dv[:3].sum()), "hT": float(dv.sum()),
                "riesgo": float(dr.sum()), "riesgo1": float(dr[:1].sum())}
-        out["dinero"] = ev.valor_dinero * (bf - banco) / 10.0
+        out["dinero"] = float(valor_dinero(bf, sale, entra))
         out["puntaje"] = out["hT"] - ev.lam * out["riesgo"] + out["dinero"]
         return out
 
