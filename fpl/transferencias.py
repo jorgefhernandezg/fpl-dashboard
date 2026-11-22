@@ -66,7 +66,9 @@ def estado_equipo(fuente, team_id, t, gw_actual, gw_siguiente):
         if g > gw_actual:
             break
         if chip_gw.get(g) in ("wildcard", "freehit"):
-            ft = min(5, ft + 1)
+            # Las libres guardadas se conservan, pero esa jornada no suma una más (ejemplo oficial de FPL:
+            # 4 guardadas antes del Free Hit de la GW29 -> 4 en la GW30).
+            continue
         else:
             ft = min(5, max(ft - h["event_transfers"], 0) + 1)
     ft = max(0, ft - len(pendientes))

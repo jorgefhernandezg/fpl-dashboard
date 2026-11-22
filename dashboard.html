@@ -153,6 +153,7 @@ footer { font-size: 13px; color: var(--muted); display: grid; gap: 4px; }
 tr.porque-fila > td { background: var(--surface-2); }
 ul.ajustes { margin: 0; padding-left: 18px; display: grid; gap: 4px; font-size: 14px; }
 .momento { display: flex; gap: 10px; align-items: baseline; font-size: 14px; }
+@media (max-width: 600px) { .paso { grid-template-columns: 56px minmax(0, 1fr); } .paso > :nth-child(3) { grid-column: 2; } }
 .paso .gw { font-family: var(--display); font-weight: 700; color: var(--accent); }
 tr.elegido td { background: var(--accent-soft); }
 .aviso { margin: 0; padding: 8px 12px; border-radius: var(--r); background: var(--warn-soft); color: var(--warn); font-size: 14px; }
@@ -381,11 +382,15 @@ function vistaResumen(D) {
   const p1 = plan.pasos[0] || { n: 0 }, p2 = plan.pasos[1] || { n: 0 };
   const titular = p1.n === 0 ? `Guarda la transferencia en la GW${gw}` : p1.n === 2 ? `Haz dos cambios en la GW${gw}` : `Haz un cambio en la GW${gw}`;
   const golpes = m.modelo.permitir_golpes;
-  const paso = (p, g) => {
-    if (!p.mov) return `<div class="paso"><span class="gw">GW${g}</span><span>Guardar transferencia${p.ft != null ? "" : ""}</span><span class="muted small">${p.ft != null ? `tendrías ${p.ft} libre${p.ft > 1 ? "s" : ""}` : ""}</span></div>`;
-    return `<div class="paso"><span class="gw">GW${g}</span><span>${textoMov(D, p.mov)}</span><span class="pos num">${signo(p.mov.hT)} pts</span></div>`;
+  // Libres: las que tienes al empezar cada jornada, cuántas usas y con cuántas llegas a la siguiente
+  const ft1 = m.equipo.ft, ft2 = p2.ft != null ? p2.ft : Math.min(5, Math.max(ft1 - p1.n, 0) + 1), ft3 = plan.ft_final, gw3 = m.gws[2];
+  const libres = n => `${n} libre${n === 1 ? "" : "s"}`;
+  const paso = (p, g, tiene, llega, gSig) => {
+    const cuenta = `<span class="muted small">Tienes ${libres(tiene)}${p.n ? `, usas ${p.n}` : ""} → llegas a la GW${gSig} con ${libres(llega)}</span>`;
+    if (!p.mov) return `<div class="paso"><span class="gw">GW${g}</span><span>Guardar transferencia</span>${cuenta}</div>`;
+    return `<div class="paso"><span class="gw">GW${g}</span><span>${textoMov(D, p.mov)} <span class="pos num">${signo(p.mov.hT)} pts</span></span>${cuenta}</div>`;
   };
-  let detalle = `<div class="pasos">${paso(p1, gw)}${paso({ ...p2, ft: p2.n === 0 ? (plan.ft_final) : p2.ft }, gw2)}</div>${momentoPill(dec.momento)}`;
+  let detalle = `<div class="pasos">${paso(p1, gw, ft1, ft2, gw2)}${paso(p2, gw2, ft2, ft3, gw3)}</div>${momentoPill(dec.momento)}`;
   if (p1.mov) detalle += `<details class="porque" open><summary>Por qué el cambio de la GW${gw}</summary>${explicar(D, p1.mov.sale, p1.mov.entra, p1.mov.hT)}</details>`;
   if (p2.mov) detalle += `<details class="porque"><summary>Por qué el cambio de la GW${gw2}</summary>${explicar(D, p2.mov.sale, p2.mov.entra, p2.mov.hT)}</details>`;
   if (p1.mov) {
@@ -432,9 +437,9 @@ function vistaResumen(D) {
   return `
   <div class="panel veredicto"><h3>Plan para las próximas 2 jornadas</h3><div class="titular">${titular}</div>${detalle}
     <p class="small muted" style="margin:0">${golpes ? "Se permiten golpes de −4 si compensan." : "Solo transferencias libres: el plan nunca incluye golpes."}
-    Guardar una transferencia vale +${f1(m.modelo.umbral_ft)} pts por cada libre que te quede al final (máximo 5).</p></div>
+    Guardar una transferencia vale +${f1(m.modelo.umbral_ft)} pts por cada libre con la que llegues a la GW${m.gws[2]} (máximo 5). Jugar un Wildcard o un Free Hit conserva las libres guardadas, pero esa jornada no suma una nueva.</p></div>
   <div class="panel"><h2>Planes comparados</h2>
-    <div class="tabla"><table><thead><tr><th>Plan</th><th>Cambios</th><th class="n">Libres al final</th><th class="n">Valor</th></tr></thead><tbody>${alternativas}</tbody></table></div>
+    <div class="tabla"><table><thead><tr><th>Plan</th><th>Cambios</th><th class="n">Libres en la GW${m.gws[2]}</th><th class="n">Valor</th></tr></thead><tbody>${alternativas}</tbody></table></div>
     <p class="small muted" style="margin:0">Valor = puntos esperados ganados en el horizonte, menos el castigo por riesgo frente al campo, más el valor del dinero liberado (solo si permite un cambio mejor) y de las transferencias libres guardadas. El cambio de la segunda semana se recalcula en cada corrida con datos nuevos.</p>
   </div>
   <div class="grid2">
