@@ -74,6 +74,9 @@ modo_dinero = "opcion"
 factor_opcion_dinero = 0.5
 candidatos_opcion_dinero = 25      # mejores jugadores por posición considerados como destino del dinero
 valor_dinero = 0.45                # solo para modo "lineal"
+# Contar el valor de la banca: un suplente suma cuando falta un titular (1.º suplente ~40% de las jornadas).
+# Desactivado mientras se mide su efecto con la probabilidad de jugar de cada jornada.
+valor_banca = false
 capitania_campo = 0.6              # parte de los dueños del capitán más elegido que lo capitanea
 candidatos_por_posicion = 15       # para evaluar dobles transferencias
 

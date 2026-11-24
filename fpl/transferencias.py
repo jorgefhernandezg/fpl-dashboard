@@ -106,6 +106,14 @@ def mejor_xi(xp, pos):
 RAZON_VARIANZA = {"GKP": 2.2, "DEF": 2.8, "MID": 2.4, "FWD": 3.1}
 
 
+def _al_menos(ausencias):
+    """P(al menos r ausentes) para r = 0..n, con ausencias independientes."""
+    dp = [1.0] + [0.0] * len(ausencias)
+    for a in ausencias:
+        dp = [dp[r] * (1 - a) + (dp[r - 1] * a if r else 0.0) for r in range(len(dp))]
+    return [float(sum(dp[r:])) for r in range(len(dp))]
+
+
 class Evaluador:
     """Valor esperado y riesgo frente al campo de una plantilla, desde la columna `desde` del horizonte.
 
@@ -113,7 +121,7 @@ class Evaluador:
     (multiplicador_tuyo − propiedad_efectiva)² × varianza. No tener a alguien muy poseído suma riesgo;
     tenerlo lo neutraliza."""
 
-    def __init__(self, matriz, jugadores, cfg, eo, desde=0):
+    def __init__(self, matriz, jugadores, cfg, eo, desde=0, pjuega=None):
         j = jugadores.set_index("id")
         H = matriz.shape[1]
         self.pesos = np.power(cfg["horizonte"]["descuento"], np.arange(H))[desde:]
@@ -130,6 +138,11 @@ class Evaluador:
         self.lam = cfg["decision"].get("aversion_riesgo", 0.0)
         self.valor_dinero = cfg["decision"].get("valor_dinero", 0.0)
         self.index = matriz.index
+        # Valor de la banca: un suplente suma cuando falta un titular. Con la probabilidad de jugar de cada
+        # titular se calcula la de que entre el 1.º, 2.º y 3.º suplente de campo, y el portero suplente.
+        self.banca = bool(cfg["decision"].get("valor_banca", False)) and pjuega is not None
+        if self.banca:
+            self.pj = pjuega.reindex(index=matriz.index, columns=matriz.columns).fillna(0.0).values[:, desde:]
 
     def evaluar(self, ids):
         filas = [self.fila[i] for i in ids]
@@ -140,10 +153,23 @@ class Evaluador:
         rie = np.zeros(M.shape[1])
         for k in range(M.shape[1]):
             xi, cap, v = mejor_xi(M[:, k], pos)
-            val[k] = v
             m = np.zeros(len(ids))
             m[xi] = 1
             m[cap] = 2
+            if self.banca:
+                pj = self.pj[filas, k]
+                banca = [i for i in range(len(ids)) if i not in set(xi)]
+                aus_campo = [1 - pj[i] for i in xi if pos[i] != "GKP"]
+                aus_gk = [1 - pj[i] for i in xi if pos[i] == "GKP"]
+                prob = _al_menos(aus_campo)
+                campo = sorted([i for i in banca if pos[i] != "GKP"], key=lambda i: -M[i, k])
+                for r, i in enumerate(campo):
+                    m[i] = prob[r + 1] if r + 1 < len(prob) else 0.0
+                for i in banca:
+                    if pos[i] == "GKP":
+                        m[i] = aus_gk[0] if aus_gk else 0.0
+                v = v + float((m[banca] * M[banca, k]).sum())
+            val[k] = v
             r2 = self.C[k] + (((m - eo) ** 2 - eo ** 2) * self.var[filas, k]).sum()
             rie[k] = np.sqrt(max(r2, 0))
         return val * self.pesos, rie * self.pesos
@@ -280,7 +306,7 @@ def _ids(x):
     return x if isinstance(x, list) else [x]
 
 
-def planificar(matriz, jugadores, cfg, eo, estado, ft, busq_ahora, aj=None):
+def planificar(matriz, jugadores, cfg, eo, estado, ft, busq_ahora, aj=None, pjuega=None):
     """Compara planes de 2 semanas usando solo transferencias libres (o con golpes, si se permiten).
 
     Valor de un plan = ganancia esta semana + ganancia la próxima (sobre la plantilla resultante)
@@ -291,8 +317,8 @@ def planificar(matriz, jugadores, cfg, eo, estado, ft, busq_ahora, aj=None):
     d = cfg["decision"]
     golpes_ok = d.get("permitir_golpes", False)
     v_ft = d["umbral_transferencia_libre"]
-    ev2 = Evaluador(matriz, jugadores, cfg, eo, desde=1)
-    ev1 = Evaluador(matriz, jugadores, cfg, eo, desde=0)
+    ev2 = Evaluador(matriz, jugadores, cfg, eo, desde=1, pjuega=pjuega)
+    ev1 = Evaluador(matriz, jugadores, cfg, eo, desde=0, pjuega=pjuega)
     plantilla, banco, venta = list(estado["plantilla"]), estado["banco"], dict(estado["venta"])
     o_in = {e for e in aj.get("comprar", []) if e not in plantilla}
     o_out = {e for e in aj.get("vender", []) if e in plantilla}

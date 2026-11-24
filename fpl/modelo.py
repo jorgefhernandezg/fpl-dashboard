@@ -414,7 +414,7 @@ def proyectar(t, cfg, gws, ajuste_min=None):
                 n["defensa"] += p60 * float(esperanza_piso(b["atajadas90"], pts["atajadas_por_punto"]))
             total = sum(c.values())
             filas.append({"id": pid, "gw": p["gw"], "rival": p["rival"], "local": p["local"],
-                          "xmin": m, "p60": p60, "xg": xg, "xa": xa, "p_cs": p["p_cs"],
+                          "xmin": m, "p60": p60, "p_juega": p_juega, "xg": xg, "xa": xa, "p_cs": p["p_cs"],
                           **c, "xpts": total,
                           "n_aparicion": n["aparicion"], "n_ataque": n["ataque"], "n_defensa": n["defensa"],
                           "n_bonus": n["bonus"], "calendario": total - sum(n.values())})
@@ -422,5 +422,8 @@ def proyectar(t, cfg, gws, ajuste_min=None):
     matriz = det.pivot_table(index="id", columns="gw", values="xpts", aggfunc="sum").reindex(
         columns=gws).fillna(0.0)
     matriz = matriz.reindex(j["id"]).fillna(0.0)
-    return {"matriz": matriz, "detalle": det, "base": base, "fuerza": fuerza, "mu": mu,
+    # Probabilidad de jugar en cada jornada (con doble jornada, la de jugar al menos uno; aproximada por la suma)
+    pjuega = det.pivot_table(index="id", columns="gw", values="p_juega", aggfunc="sum").reindex(
+        columns=gws).fillna(0.0).clip(upper=1.0).reindex(j["id"]).fillna(0.0)
+    return {"matriz": matriz, "pjuega": pjuega, "detalle": det, "base": base, "fuerza": fuerza, "mu": mu,
             "ventaja_local": r, "futuros": fut, "disponibilidad": disp}

@@ -63,9 +63,9 @@ def ejecutar(local=None, salida=None, ahora=None):
     ft_cfg = cfg["equipo"]["transferencias_libres"]
     ft = int(ft_cfg) if ft_cfg else est["ft_estimadas"]
     eo = propiedad_efectiva(t, gw_actual, cfg)
-    evalu = transferencias.Evaluador(X, t["jugadores"], cfg, eo)
+    evalu = transferencias.Evaluador(X, t["jugadores"], cfg, eo, pjuega=proy["pjuega"])
     busq = transferencias.buscar(evalu, est["plantilla"], est["banco"], est["venta"], cfg, aj=aj)
-    planes, plan_libre = transferencias.planificar(X, t["jugadores"], cfg, eo, est, ft, busq, aj)
+    planes, plan_libre = transferencias.planificar(X, t["jugadores"], cfg, eo, est, ft, busq, aj, pjuega=proy["pjuega"])
     if (aj["comprar"] or aj["vender"]) and planes and not planes[0]["cumple"]:
         aj["avisos"].append("Ningún plan de 2 semanas cumple tus listas de comprar/vender con las transferencias "
                             "libres y el dinero disponibles; se muestra el mejor plan sin esa condición.")
@@ -180,6 +180,7 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
             "ep": r2(r["ep_next"], 1),
             "neto": ni(r["transfers_in_event"]) - ni(r["transfers_out_event"]),
             "xp": [r2(v) for v in X.loc[pid].values], "xpt": r2(xpt[pid]),
+            "pj": [r2(v) for v in proy["pjuega"].loc[pid].values],
             "xmin": r2(sig["xmin"].get(pid, 0), 0), "p60": r2(sig["p60"].get(pid, 0)),
             "ptit": r2(b.at[pid, "p_tit"]), "xg90": r2(b.at[pid, "xg90"]), "xa90": r2(b.at[pid, "xa90"]),
             "pdc": r2(b.at[pid, "p_dc"]) if r["pos"] != "GKP" else None,
