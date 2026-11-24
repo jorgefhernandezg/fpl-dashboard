@@ -180,7 +180,7 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
             "ep": r2(r["ep_next"], 1),
             "neto": ni(r["transfers_in_event"]) - ni(r["transfers_out_event"]),
             "xp": [r2(v) for v in X.loc[pid].values], "xpt": r2(xpt[pid]),
-            "pj": [r2(v) for v in proy["pjuega"].loc[pid].values],
+            "pjg": [r2(v) for v in proy["pjuega"].loc[pid].values],
             "xmin": r2(sig["xmin"].get(pid, 0), 0), "p60": r2(sig["p60"].get(pid, 0)),
             "ptit": r2(b.at[pid, "p_tit"]), "xg90": r2(b.at[pid, "xg90"]), "xa90": r2(b.at[pid, "xa90"]),
             "pdc": r2(b.at[pid, "p_dc"]) if r["pos"] != "GKP" else None,
