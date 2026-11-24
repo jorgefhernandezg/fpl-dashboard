@@ -49,6 +49,8 @@ def ejecutar(local=None, salida=None, ahora=None):
     deadline = ev.set_index("id")["deadline"][gw_sig]
 
     aj = ajustes.cargar(cfg, t["jugadores"])
+    from . import penales
+    info_pen = penales.cargar(t, cfg, gw_actual)
     proy = modelo.proyectar(t, cfg, gws, aj["minutos"])
     X = proy["matriz"]
     pesos_gw = np.power(cfg["horizonte"]["descuento"], np.arange(H))
@@ -88,7 +90,7 @@ def ejecutar(local=None, salida=None, ahora=None):
 
     # --- salida ---
     res = armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_sig, deadline,
-                       ahora, valid, auditoria, pesos_gw, eo, rchips, raw["boot"], aj, plan_libre)
+                       ahora, valid, auditoria, pesos_gw, eo, rchips, raw["boot"], aj, plan_libre, info_pen)
     res["meta"]["segundos"] = round(time.time() - t0, 1)
     res["meta"]["llamadas_api"] = fuente.llamadas
     escribir(res, salida)
@@ -133,7 +135,7 @@ def auditar_capitania(fuente, team_id, reg, t):
 
 
 def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_sig, deadline, ahora,
-                 valid, auditoria, pesos_gw, eo, rchips, boot, aj, plan_libre):
+                 valid, auditoria, pesos_gw, eo, rchips, boot, aj, plan_libre, info_pen=None):
     j = t["jugadores"].set_index("id")
     X = proy["matriz"]
     b = proy["base"]
@@ -278,6 +280,7 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
                    "permitir_golpes": bool(cfg["decision"].get("permitir_golpes", False))},
         "gws_pasados": gws_pas,
         "chips_umbral_wc": cfg.get("chips", {}).get("wildcard", 10.0),
+        "penales": info_pen,
         "ajustes": {"minutos": {str(k): v for k, v in aj["minutos"].items()},
                     "no_vender": aj["no_vender"], "no_comprar": aj["no_comprar"],
                     "vender": aj["vender"], "comprar": aj["comprar"], "avisos": aj["avisos"],

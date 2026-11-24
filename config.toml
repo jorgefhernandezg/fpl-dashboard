@@ -48,6 +48,14 @@ factor_asistencias = { DEF = 1.28, MID = 1.32, FWD = 1.7, GKP = 1.0 }
 # Normalizar el xG/xA pasado por la dificultad de cada rival. Probado en 2025-26: no mejora el orden
 # (0.278 con y sin ajuste), porque con varias jornadas los rivales se compensan. Desactivado.
 ajuste_rival = false
+# Penales: lista de la temporada copiada de Transfermarkt (data/penales_2026.csv). El xG de cada penal
+# pateado (0.79) sale de la producción de juego del jugador, y el xG de penales se proyecta aparte para el
+# lanzador designado según el ritmo de penales de su equipo. Hay que añadir los penales nuevos cada semana:
+# los que falten se cuentan como juego normal.
+penales = true
+archivo_penales = "data/penales_2026.csv"
+xg_penal = 0.79
+prior_partidos_penales = 12
 
 [decision]
 permitir_golpes = false            # false = solo transferencias libres (nunca -4)
