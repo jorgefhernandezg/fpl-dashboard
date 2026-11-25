@@ -13,7 +13,8 @@ def _venta(compra, precio):
     return compra + (precio - compra) // 2 if precio > compra else precio
 
 
-def evaluar(mov, jugadores, estado, deadline, ahora):
+def evaluar(mov, jugadores, estado, deadline, ahora, si_apto=None, umbral=1.5):
+    """si_apto(pid): valor del mismo cambio si el jugador que sale (en duda) estuviera apto."""
     if not mov:
         return None
     j = jugadores.set_index("id")
@@ -34,7 +35,16 @@ def evaluar(mov, jugadores, estado, deadline, ahora):
     for s_ in sale:
         r = j.loc[s_]
         if r["status"] == "d":
-            esperar.append("%s está en duda: si se recupera, quizá no convenga venderlo" % r["web_name"])
+            v = si_apto(s_) if si_apto else None
+            n_mov = len(sale)
+            if v is None:
+                esperar.append("%s está en duda: si se recupera, quizá no convenga venderlo" % r["web_name"])
+            elif v >= umbral * n_mov:
+                motivos.append("%s está en duda, pero aun si se recupera el cambio vale %+.1f pts: conviene en "
+                               "ambos casos" % (r["web_name"], v))
+            else:
+                esperar.append("%s está en duda: si se recupera, el cambio vale solo %+.1f pts (guardar la "
+                               "transferencia vale %.1f), así que conviene solo si no juega" % (r["web_name"], v, umbral * n_mov))
         pp = r["proy_precio"]
         if not pd.isna(pp) and pp <= -SUBE:
             compra = estado["compra"].get(s_, r["now_cost"])

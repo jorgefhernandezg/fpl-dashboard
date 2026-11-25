@@ -296,12 +296,44 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
         return {"total": r2(pl["total"]), "ft_final": pl["ft_final"], "golpes": pl["golpes"], "cumple": pl["cumple"],
                 "pasos": [paso_json(p) for p in pl["pasos"]]}
 
+    # Escenario "si se recupera": para quien sale estando en duda, el mismo cambio con ese jugador apto
+    lam = cfg["decision"].get("aversion_riesgo", 0.0)
+    umbral = cfg["decision"]["umbral_transferencia_libre"]
+    pj = proy["pjuega"]
+    cache = {}
+
+    def evaluador_apto(pid):
+        if pid not in cache:
+            Xa, pja = X.copy(), pj.copy()
+            for g in X.columns:
+                if pja.at[pid, g] < 0.9:
+                    otras = [c for c in X.columns if pja.at[pid, c] >= 0.9]
+                    Xa.at[pid, g] = (X.at[pid, g] / pja.at[pid, g] * 0.95 if pja.at[pid, g] > 0.05
+                                     else float(X.loc[pid, otras].mean()) if otras else X.at[pid, g])
+                    pja.at[pid, g] = 0.95
+            ev = transferencias.Evaluador(Xa, t["jugadores"], cfg, eo, pjuega=pja)
+            cache[pid] = (ev, ev.evaluar(plantilla))
+        return cache[pid]
+
+    def si_apto(m):
+        def f(pid):
+            ev, (bv, br) = evaluador_apto(pid)
+            sale, entra = transferencias._ids(m["sale"]), transferencias._ids(m["entra"])
+            nueva = [entra[sale.index(x)] if x in sale else x for x in plantilla]
+            v, r = ev.evaluar(nueva)
+            return float((v - bv).sum() - lam * (r - br).sum() + m.get("dinero", 0.0))
+        return f
+
+    def cuando(m):
+        return momento.evaluar(m, t["jugadores"], est, deadline, ahora, si_apto=si_apto(m) if m else None,
+                               umbral=umbral)
+
     mejor = planes[0]
     primero = mejor["pasos"][0]
     decision = {
         "tipo": {0: "guardar", 1: "simple", 2: "doble"}[primero["n"]],
         "mov": mov(primero["mov"]) if primero["mov"] else None,
-        "momento": momento.evaluar(primero["mov"], t["jugadores"], est, deadline, ahora),
+        "momento": cuando(primero["mov"]),
         "plan": plan_json(mejor), "planes": [plan_json(p) for p in planes[:6]],
     }
     # Riesgo frente al campo: jugadores muy poseídos que no tienes, ordenados por lo que el campo gana con ellos
@@ -318,10 +350,8 @@ def armar_salida(t, cfg, proy, diag, est, busq, planes, ft, gws, gw_actual, gw_s
     return {
         "meta": meta,
         "decision": decision,
-        "transferencias": {"simples": [dict(mov(m), momento=momento.evaluar(m, t["jugadores"], est, deadline, ahora))
-                                       for m in busq["simples"][:30]],
-                           "dobles": [dict(mov(m), momento=momento.evaluar(m, t["jugadores"], est, deadline, ahora))
-                                      for m in busq["dobles"][:20]],
+        "transferencias": {"simples": [dict(mov(m), momento=cuando(m)) for m in busq["simples"][:30]],
+                           "dobles": [dict(mov(m), momento=cuando(m)) for m in busq["dobles"][:20]],
                            "por_salida": {str(k): v for k, v in por_salida.items()}},
         "plantilla": {"ids": [int(i) for i in plantilla],
                       "venta": {str(k): v / 10 for k, v in est["venta"].items()},
